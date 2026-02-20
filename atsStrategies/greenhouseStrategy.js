@@ -40,8 +40,17 @@ class GreenhouseStrategy extends GenericStrategy {
 
     findGreenhouseSpecificMatch(input, data) {
         const id = (input.id || "").toLowerCase();
-        const parentDiv = input.closest('div.field');
-        const labelTxt = parentDiv ? (parentDiv.querySelector('label')?.innerText || "").toLowerCase() : "";
+
+        let labelTxt = "";
+        if (input.id) {
+            const labelEl = document.querySelector(`label[for="${input.id}"]`);
+            if (labelEl) labelTxt = labelEl.innerText.toLowerCase();
+        }
+
+        if (!labelTxt) {
+            const parentDiv = input.closest('div.field') || input.closest('div.input-wrapper') || input.closest('div.select__container') || input.parentElement;
+            labelTxt = parentDiv ? (parentDiv.querySelector('label')?.innerText || "").toLowerCase() : "";
+        }
 
         if (id.includes('first_name')) return { value: data.identity.first_name, confidence: 95 };
         if (id.includes('last_name')) return { value: data.identity.last_name, confidence: 95 };
