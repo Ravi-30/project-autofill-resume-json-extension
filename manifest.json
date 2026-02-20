@@ -4,12 +4,13 @@
   "version": "1.1",
   "description": "Auto-fills job application forms and generates AI answers.",
   "permissions": [
-    "activeTab",
     "storage",
-    "scripting",
     "contextMenus",
     "sidePanel"
   ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' http://localhost:11434 https://api.openai.com https://api.anthropic.com;"
+  },
   "host_permissions": [
     "http://localhost:11434/*",
     "https://*.greenhouse.io/*",
