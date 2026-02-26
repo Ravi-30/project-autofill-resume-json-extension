@@ -60,10 +60,10 @@ function attemptAutoFill() {
 
     autoFillState.debouncing = true;
     setTimeout(() => {
-        chrome.storage.local.get(['normalizedData', 'aiEnabled'], (result) => {
+        chrome.storage.local.get(['normalizedData', 'aiEnabled', 'resumeFile'], (result) => {
             if (result.normalizedData) {
                 console.log("AutoFill: Automatically executing using cached normalized data");
-                fillForm(result.normalizedData, result.aiEnabled || false, false);
+                fillForm(result.normalizedData, result.aiEnabled || false, false, result.resumeFile);
             }
         });
         autoFillState.debouncing = false;
@@ -110,9 +110,9 @@ const observer = new MutationObserver((mutations) => {
 // Start observing the document body for injected form elements
 observer.observe(document.body, { childList: true, subtree: true });
 
-function fillForm(normalizedData, aiEnabled, isManualTrigger = false) {
+function fillForm(normalizedData, aiEnabled, isManualTrigger = false, resumeFile = null) {
     console.log("Detected URL:", window.location.href);
 
     const strategy = ATSStrategyRegistry.getStrategy(window.location.href, document);
-    strategy.execute(normalizedData, aiEnabled);
+    strategy.execute(normalizedData, aiEnabled, resumeFile);
 }
