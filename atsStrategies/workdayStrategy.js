@@ -1,0 +1,219 @@
+/**
+ * workdayStrategy.js
+ * Strategy for Workday application forms.
+ */
+class WorkdayStrategy extends GenericStrategy {
+    constructor() {
+        super();
+        this.CONFIDENCE_THRESHOLD = 70; // Keep standard threshold for workday
+    }
+
+    async execute(normalizedData, aiEnabled, resumeFile = null) {
+        // console.log("Executing WorkdayStrategy (Human-like speed)...");
+        await super.execute(normalizedData, aiEnabled, resumeFile);
+
+        // Handle Workday-specific custom country dropdowns that GenericStrategy might miss
+        this._fillWorkdayCountry(normalizedData);
+
+        // console.log('Workday AutoFill complete!');
+    }
+
+    _fillWorkdayCountry(normalizedData) {
+        const country = normalizedData?.contact?.country || "";
+        if (!country) return;
+
+        const usVariations = ['us', 'usa', 'united states', 'united states of america'];
+        const isUS = usVariations.includes(country.toLowerCase().replace(/[^\w\s]/g, '').trim());
+
+        // Workday often uses buttons with data-automation-id="countryDropdown" 
+        // or a div with data-automation-id="addressSection_country"
+        const countryTriggers = document.querySelectorAll('[data-automation-id*="country"], [aria-label*="country" i]');
+
+        countryTriggers.forEach(trigger => {
+            // If it's a button/div that looks like a dropdown trigger
+            if (trigger.tagName === 'BUTTON' || trigger.tagName === 'DIV' || trigger.getAttribute('role') === 'button') {
+                const text = (trigger.innerText || "").toLowerCase();
+                // If it's already filled with something that looks like the country, skip
+                if (isUS && (text.includes('united states') || text.includes('usa'))) return;
+
+                // console.log("WorkdayStrategy: Found potential country dropdown trigger:", trigger);
+                // We don't want to click randomly, but we can try to set the value if it's an input inside
+                const input = trigger.querySelector('input') || (trigger.tagName === 'INPUT' ? trigger : null);
+                if (input) {
+                    // console.log("WorkdayStrategy: Setting country input value directly");
+                    this.setInputValue(input, isUS ? "United States of America" : country);
+                }
+            }
+        });
+    }
+
+    handleInitialEntry() {
+        // console.log("WorkdayStrategy: Looking for Apply button on Workday job page...");
+
+        // On Workday job listing pages, the Apply button is usually near the job title
+        // It might be an icon button with no text, so we need to be more permissive
+
+        // First, try to find buttons with obvious apply-related attributes or text
+        const likelyApplyButtons = Array.from(document.querySelectorAll(
+            'button, [role="button"], a[role="button"]'
+        )).filter(btn => {
+            if (btn.disabled || btn.offsetParent === null) return false;
+
+            const text = (btn.innerText || btn.textContent || "").toLowerCase().trim();
+            const ariaLabel = (btn.getAttribute('aria-label') || "").toLowerCase();
+            const dataId = (btn.getAttribute('data-automation-id') || "").toLowerCase();
+            const title = (btn.getAttribute('title') || "").toLowerCase();
+
+            // Check all possible places text could be
+            const allText = text + ' ' + ariaLabel + ' ' + dataId + ' ' + title;
+
+            return allText.includes('apply');
+        });
+
+        // console.log("WorkdayStrategy: Found", likelyApplyButtons.length, "buttons with 'apply' in text/attributes");
+
+        if (likelyApplyButtons.length > 0) {
+            // Log details about each
+            likelyApplyButtons.forEach((btn, idx) => {
+                const text = (btn.innerText || btn.textContent || "").substring(0, 40);
+                const ariaLabel = btn.getAttribute('aria-label') || "N/A";
+                // console.log(`  [${idx}] text="${text}" aria-label="${ariaLabel}"`);
+            });
+
+            // Click the first obvious apply button
+            const btn = likelyApplyButtons[0];
+            // console.log("WorkdayStrategy: ✓ Clicking Apply button");
+            btn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            setTimeout(() => {
+                btn.click();
+            }, 300);
+            return true;
+        }
+
+        // Fallback: if no explicit "apply" button, look for the most prominent button
+        // (highest z-index, latest in DOM) that might be the apply button
+        // console.log("WorkdayStrategy: No explicit 'apply' button found, scanning all buttons...");
+
+        const allButtons = Array.from(document.querySelectorAll('button, [role="button"], a[role="button"]'));
+        const visibleButtons = allButtons.filter(b => b.offsetParent !== null && !b.disabled);
+
+        // console.log("WorkdayStrategy: Found", visibleButtons.length, "visible buttons total");
+
+        // Check if any button looks like a primary CTA (usually styled differently)
+        let ctaButton = null;
+        for (const btn of visibleButtons) {
+            const style = window.getComputedStyle(btn);
+            const bgColor = style.backgroundColor;
+            const btnText = (btn.innerText || btn.textContent || "").toLowerCase().trim();
+
+            // Skip tiny buttons (likely icons or minor controls)
+            const rect = btn.getBoundingClientRect();
+            if (rect.width < 30 || rect.height < 20) continue;
+
+            // Skip buttons with explicit exclusion keywords
+            if (btnText.includes('close') || btnText.includes('cancel') || btnText.includes('back')) continue;
+
+            // Look for the button nearest to the job content area (usually top of page or job header)
+            // Workday typically shows the Apply button in the job header
+            if (!ctaButton) {
+                ctaButton = btn;
+            }
+        }
+
+        if (ctaButton) {
+            const text = (ctaButton.innerText || ctaButton.textContent || "").substring(0, 40);
+            // console.log("WorkdayStrategy: Clicking prominent button: \"" + text + "\"");
+            ctaButton.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            setTimeout(() => {
+                ctaButton.click();
+            }, 300);
+            return true;
+        }
+
+        // console.log("WorkdayStrategy: Could not find apply button, falling back to generic handler");
+        return super.handleInitialEntry();
+    }
+
+    autoSubmit() {
+        // console.log("WorkdayStrategy: Looking for submit button...");
+
+        // Workday typically uses "Next", "Continue", or sometimes "Apply Now"
+        const submitPatterns = ['next', 'continue', 'submit', 'submit application', 'apply now', 'save and continue', 'finish'];
+
+        // Get all button elements
+        const allButtons = Array.from(document.querySelectorAll('button, [role="button"], a[role="button"], input[type="submit"]'));
+
+        // Filter to visible buttons with submit-like text
+        const submitButtons = allButtons.filter(btn => {
+            if (btn.disabled || btn.offsetParent === null) return false;
+
+            const text = (btn.innerText || btn.value || btn.getAttribute('aria-label') || "").toLowerCase().trim();
+            const dataId = (btn.getAttribute('data-automation-id') || "").toLowerCase();
+
+            // Match against pattern (prefer "next" and "continue" for Workday)
+            return submitPatterns.some(p => text === p || text.includes(p) || dataId.includes(p));
+        });
+
+        // console.log("WorkdayStrategy: Found", submitButtons.length, "potential submit buttons");
+
+        if (submitButtons.length > 0) {
+            // Priority: "Submit" > "Next" > "Continue"
+            const btn = submitButtons.find(b => {
+                const text = (b.innerText || b.value || b.getAttribute('aria-label') || "").toLowerCase().trim();
+                return text.includes('submit');
+            }) || submitButtons.find(b => {
+                const text = (b.innerText || b.value || b.getAttribute('aria-label') || "").toLowerCase().trim();
+                return text === 'next' || text === 'continue';
+            }) || submitButtons[0];
+
+            const text = (btn.innerText || btn.value || btn.getAttribute('aria-label') || "").toLowerCase().trim();
+            // console.log(`WorkdayStrategy: Clicking submit button: "${text}"`);
+            btn.click();
+            return text.includes('submit') || text.includes('finish');
+        }
+
+        // console.log("WorkdayStrategy: No submit button found, falling back to generic");
+        return super.autoSubmit();
+    }
+
+    findValueForInput(input, normalizedData) {
+        let match = this.findWorkdaySpecificMatch(input, normalizedData);
+        if (match && match.value) return match;
+        return super.findValueForInput(input, normalizedData);
+    }
+
+    findWorkdaySpecificMatch(input, data) {
+        const dataAutomationId = (input.getAttribute('data-automation-id') || "").toLowerCase();
+
+        if (!dataAutomationId) {
+            // Check label text for specific Sutter Health questions if automation ID is missing
+            const label = input.closest('div')?.querySelector('label')?.innerText.toLowerCase() || "";
+            if (label.includes('sutter health') && label.includes('past')) return { value: 'No', confidence: 95 };
+            if (label.includes('how did you hear')) return { value: 'Job Search Site', confidence: 95 };
+            return null;
+        }
+
+        // Common Workday data-automation-ids
+        if (dataAutomationId.includes('legalname-first')) return { value: data.identity.first_name, confidence: 95 };
+        if (dataAutomationId.includes('legalname-last')) return { value: data.identity.last_name, confidence: 95 };
+        if (dataAutomationId.includes('email')) return { value: data.contact.email, confidence: 95 };
+        if (dataAutomationId.includes('phone-number')) return { value: data.contact.phone, confidence: 95 };
+        if (dataAutomationId.includes('address-line1')) return { value: data.contact.address, confidence: 95 };
+        if (dataAutomationId.includes('address-city')) return { value: data.contact.city, confidence: 95 };
+        if (dataAutomationId.includes('address-postal-code')) return { value: data.contact.zip_code, confidence: 95 };
+
+        // Specific mappings for Source and Prior Experience
+        if (dataAutomationId.includes('sourceprompt')) return { value: 'Job Search Site', confidence: 95 };
+        if (dataAutomationId.includes('previousemployee')) return { value: 'No', confidence: 95 };
+
+        return null;
+    }
+}
+
+// Register with Strategy Registry if available
+if (typeof ATSStrategyRegistry !== 'undefined') {
+    ATSStrategyRegistry.register(
+        (url, doc) => url.includes('workday.com') || url.includes('myworkdayjobs.com'),
+        WorkdayStrategy
+    );
+}
