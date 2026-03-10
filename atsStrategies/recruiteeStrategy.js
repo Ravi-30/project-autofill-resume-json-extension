@@ -8,11 +8,11 @@ class RecruiteeStrategy extends GenericStrategy {
         this.CONFIDENCE_THRESHOLD = 70; 
     }
 
-    execute(normalizedData, aiEnabled) {
+    async execute(normalizedData, aiEnabled, resumeFile = null) {
         // console.log("Executing RecruiteeStrategy...");
         
         // Basic fallback execution. Override findValueForInput if specific DOM structures are known.
-        super.execute(normalizedData, aiEnabled);
+        await super.execute(normalizedData, aiEnabled, resumeFile);
     }
 }
 

@@ -87,6 +87,7 @@ class ResumeProcessor {
             pronouns: basics.pronouns || (basics.custom && basics.custom.pronouns) || "",
             veteran_status: basics.veteranStatus || "",
             disability_status: basics.disabilityStatus || "",
+            ethnicity: basics.ethnicity || basics.race || (basics.demographics && (basics.demographics.ethnicity || basics.demographics.race)) || "",
             sponsorship_required: (basics.workAuthorization && basics.workAuthorization.requiresSponsorshipNowOrFuture) ||
                 findByPattern(basics.workAuthorization, ["sponsorship"]),
             hispanic_latino: basics.hispanicLatino || (basics.demographics && basics.demographics.hispanicOrLatino) || ""
@@ -117,7 +118,8 @@ class ResumeProcessor {
             city: location.city || "",
             state: location.region || "",
             zip_code: location.postalCode || "",
-            country: location.countryCode || ""
+            country: location.countryCode || "",
+            location: (location.city && location.region) ? `${location.city}, ${location.region}` : (location.address || location.city || "")
         };
 
         // 3. Employment & Reverse Maps

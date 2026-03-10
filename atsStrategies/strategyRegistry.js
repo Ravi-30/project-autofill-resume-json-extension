@@ -26,23 +26,28 @@ class ATSStrategyRegistry {
      * @returns {GenericStrategy} An instance of the matching strategy (or GenericStrategy fallback)
      */
     static getStrategy(url, doc) {
-        // Return the cached instance if the URL hasn't changed
-        if (this._cache && this._cachedUrl === url) {
-            return this._cache;
-        }
-
-        let instance;
+        // Find the matched strategy class for the current URL/DOM
+        let matchedClass = null;
         for (const { matchCondition, strategyClass } of this.strategies) {
             if (matchCondition(url, doc)) {
-                instance = new strategyClass();
+                matchedClass = strategyClass;
                 break;
             }
         }
-        if (!instance) instance = new GenericStrategy();
+        if (!matchedClass) matchedClass = GenericStrategy;
 
-        this._cache = instance;
+        // If we already have a cached instance of the EXACT same class type, 
+        // return it! This ensures internal states (like `this._hasUploadedResume`) 
+        // survive single-page-application URL changes (e.g. /job -> /job/apply).
+        if (this._cache && this._cache instanceof matchedClass) {
+            this._cachedUrl = url;
+            return this._cache;
+        }
+
+        // Otherwise, instantiate the new class type
+        this._cache = new matchedClass();
         this._cachedUrl = url;
-        return instance;
+        return this._cache;
     }
 
     /** Call this when navigating to a new page to reset the cache. */

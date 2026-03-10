@@ -46,9 +46,18 @@ document.addEventListener('DOMContentLoaded', () => {
     let autoApplyJobs = [];
 
     // --- 1. Settings Bootstrapping ---
-    chrome.storage.local.get(['resumeData', 'aiEnabled', 'customAtsAnswers', 'savedProfiles', 'activeProfileName', 'normalizedData', 'resumeFile', 'autoRunActive', 'currentJobIndex', 'totalJobs', 'jobQueue'], (result) => {
+    chrome.storage.local.get(['resumeData', 'aiEnabled', 'geminiApiKey', 'customAtsAnswers', 'savedProfiles', 'activeProfileName', 'normalizedData', 'resumeFile', 'autoRunActive', 'currentJobIndex', 'totalJobs', 'jobQueue'], (result) => {
+        console.log("SidePanel: Loaded storage data", result);
         if (result.aiEnabled) {
+            console.log("SidePanel: AI is enabled in storage");
             document.getElementById('aiToggle').checked = true;
+            document.getElementById('aiConfig').classList.remove('hidden');
+        } else {
+            console.log("SidePanel: AI is disabled in storage");
+        }
+        if (result.geminiApiKey) {
+            console.log("SidePanel: Gemini API Key found in storage");
+            document.getElementById('geminiApiKey').value = result.geminiApiKey;
         }
         if (result.customAtsAnswers) {
             customAtsAnswers = { ...customAtsAnswers, ...result.customAtsAnswers };
@@ -120,7 +129,24 @@ document.addEventListener('DOMContentLoaded', () => {
     const aiToggle = document.getElementById('aiToggle');
     if (aiToggle) {
         aiToggle.addEventListener('change', (e) => {
-            chrome.storage.local.set({ aiEnabled: e.target.checked });
+            const enabled = e.target.checked;
+            console.log("SidePanel: AI Toggle changed to", enabled);
+            chrome.storage.local.set({ aiEnabled: enabled }, () => {
+                console.log("SidePanel: aiEnabled saved to storage");
+            });
+            if (enabled) {
+                document.getElementById('aiConfig').classList.remove('hidden');
+            } else {
+                document.getElementById('aiConfig').classList.add('hidden');
+            }
+        });
+    }
+
+    // Handle API Key Input
+    const geminiApiKeyInput = document.getElementById('geminiApiKey');
+    if (geminiApiKeyInput) {
+        geminiApiKeyInput.addEventListener('input', (e) => {
+            chrome.storage.local.set({ geminiApiKey: e.target.value });
         });
     }
 
@@ -405,6 +431,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             resumeFile: result.resumeFile,
                             manual: true
                         }, (response) => {
+                            console.log("SidePanel: Manual fill triggered. aiEnabled passed:", result.aiEnabled || false);
                             showStatus(chrome.runtime.lastError ? 'Error.' : 'Initiated!', chrome.runtime.lastError ? 'error' : 'success');
                         });
                     }
@@ -460,22 +487,115 @@ document.addEventListener('DOMContentLoaded', () => {
         reportData.forEach(item => {
             const tr = document.createElement('tr');
             tr.dataset.fieldid = item.id;
+            tr.dataset.label = item.label;
+
             const tdLabel = document.createElement('td');
+            tdLabel.style.display = 'flex';
+            tdLabel.style.alignItems = 'center';
             tdLabel.textContent = item.label.substring(0, 20) + (item.label.length > 20 ? '...' : '');
+
+            // AI Regenerate Button
+            const aiBtn = document.createElement('button');
+            aiBtn.className = 'ai-regen-btn';
+            aiBtn.title = 'Regenerate with Gemini ✨';
+            aiBtn.innerHTML = `
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"></path>
+                </svg>
+            `;
+            aiBtn.onclick = () => triggerSingleAIFill(item.id, item.label, tr);
+            tdLabel.appendChild(aiBtn);
+
             const tdValue = document.createElement('td');
             const input = document.createElement('input');
             input.type = 'text'; input.className = 'edit-input'; input.value = item.value || '';
             tdValue.appendChild(input);
+
             const tdStatus = document.createElement('td');
-            let badge = '';
-            if (item.status === 'filled') badge = `<span class="badge badge-green">${item.confidence}%</span>`;
-            else if (item.status === 'low_confidence') badge = `<span class="badge badge-yellow">${item.confidence}%</span>`;
-            else if (item.status === 'unmatched_required') badge = `<span class="badge badge-red">Missed</span>`;
-            tdStatus.innerHTML = badge;
+            let badgeClass = 'badge-red';
+            let statusText = 'Missed';
+            if (item.status === 'filled') {
+                badgeClass = 'badge-green';
+                statusText = `${item.confidence}%`;
+            } else if (item.status === 'low_confidence') {
+                badgeClass = 'badge-yellow';
+                statusText = `${item.confidence}%`;
+            } else if (item.status === 'ai_generated') {
+                badgeClass = 'badge-ai';
+                statusText = '✨ AI';
+            }
+
+            tdStatus.innerHTML = `<span class="badge ${badgeClass}">${statusText}</span>`;
             tr.append(tdLabel, tdValue, tdStatus);
             summaryTableBody.appendChild(tr);
         });
         summaryPanelContainer.classList.remove('hidden');
+    }
+
+    async function triggerSingleAIFill(fieldId, labelText, rowElement) {
+        const aiBtn = rowElement.querySelector('.ai-regen-btn');
+        const badge = rowElement.querySelector('.badge');
+        const input = rowElement.querySelector('.edit-input');
+
+        if (aiBtn) aiBtn.classList.add('spinning');
+        showStatus(`Gemini is thinking about "${labelText}"...`, 'info');
+
+        chrome.storage.local.get(['normalizedData', 'aiEnabled', 'geminiApiKey', 'activeTabId'], async (result) => {
+            if (!result.normalizedData) {
+                showStatus('Missing resume data.', 'error');
+                if (aiBtn) aiBtn.classList.remove('spinning');
+                return;
+            }
+
+            // Attempt to get page context from the active tab
+            let pageContext = {};
+            try {
+                const tabs = await new Promise(resolve => chrome.tabs.query({ active: true, currentWindow: true }, resolve));
+                const currentTabId = tabs[0]?.id || result.activeTabId;
+                if (currentTabId) {
+                    pageContext = await new Promise(resolve => {
+                        chrome.tabs.sendMessage(currentTabId, { action: "get_page_context" }, (response) => {
+                            if (chrome.runtime.lastError) resolve({});
+                            else resolve(response || {});
+                        });
+                    });
+                }
+            } catch (e) {
+                console.error("SidePanel: Context fetch failed", e);
+            }
+
+            const prompt = `
+                You are an AI assistant helping a job seeker fill out an application.
+                Based on the following resume data, what is the best answer for the field labeled: "${labelText}"?
+
+                JOB CONTEXT:
+                - Company: ${pageContext.companyName || 'Unknown'}
+                - Job/Page Title: ${pageContext.headerText || pageContext.pageTitle || 'Job Application'}
+                - URL: ${pageContext.url || 'Unknown'}
+
+                RESUME DATA (JSON):
+                ${JSON.stringify(result.normalizedData, null, 2)}
+
+                INSTRUCTIONS:
+                - Provide ONLY the answer text. No conversational filler.
+                - If it's a short answer (e.g. why do you want to work here), keep it professional and under 150 words.
+                - If you cannot find a relevant answer, return "NOT_FOUND".
+            `;
+
+            chrome.runtime.sendMessage({ action: "generate_ai_answer", prompt: prompt }, (response) => {
+                if (aiBtn) aiBtn.classList.remove('spinning');
+
+                if (response && response.text && response.text.trim() !== "NOT_FOUND") {
+                    input.value = response.text.trim();
+                    badge.className = 'badge badge-ai';
+                    badge.textContent = '✨ AI';
+                    showStatus('Gemini suggested an answer!', 'success');
+                } else {
+                    const errorMsg = (response && response.error) ? response.error : "Gemini couldn't find an answer.";
+                    showStatus(errorMsg, 'error');
+                }
+            });
+        });
     }
 
     function showStatus(msg, type) {

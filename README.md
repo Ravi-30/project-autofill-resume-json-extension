@@ -17,13 +17,7 @@ A powerful, intelligent Chrome Extension designed to fully automate the tedious 
 
 ## 🏗️ Supported ATS Platforms
 
-The extension includes highly optimized strategies for over **24+ Applicant Tracking Systems**, including:
-
-- **Primary**: Greenhouse, Lever, Workday, Ashby, LinkedIn, Indeed.
-- **Enterprise**: Oracle Cloud, SuccessFactors, Taleo, Workday, BrassRing, iCIMS.
-- **SaaS/Modern**: Workable, BambooHR, Personio, Recruitee, Rippling, SmartRecruiters, Teamtailor, JazzHR (Applytojob).
-- **Regional/Niche**: ADP, Paychex, Paycom, Ultipro (UKG).
-- **Fallback**: A robust `GenericStrategy` handles unstructured or unidentified job boards.
+w
 
 ---
 

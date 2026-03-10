@@ -58,8 +58,21 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "generate_ai_answer") {
-    callOllama(request.prompt).then(result => {
-      sendResponse({ text: result });
+    console.log("AutoFill: Received generate_ai_answer request");
+    chrome.storage.local.get(['geminiApiKey'], (result) => {
+      if (!result.geminiApiKey) {
+        console.error("AutoFill: Missing Gemini API Key");
+        sendResponse({ error: "Missing Gemini API Key. Please enter it in the extension side panel." });
+        return;
+      }
+      console.log("AutoFill: Calling Gemini with prompt length:", request.prompt?.length);
+      callGemini(request.prompt, result.geminiApiKey).then(aiResult => {
+        console.log("AutoFill: Gemini responded successfully");
+        sendResponse({ text: aiResult });
+      }).catch(err => {
+        console.error("AutoFill: Gemini API Error:", err.message);
+        sendResponse({ error: err.message });
+      });
     });
     return true;
   }
@@ -177,17 +190,6 @@ function openCurrentJob() {
 
   isOpeningJob = true;
 
-  // Close previous tab if it exists
-  // DISABLED per user request: open each one sequentially and keep them open
-  /* 
-  if (activeJobTabId) {
-    chrome.tabs.remove(activeJobTabId, () => {
-      if (chrome.runtime.lastError) { }
-    });
-    activeJobTabId = null;
-  }
-  */
-
   const job = jobQueue[currentIndex];
   let jobUrl = typeof job === 'string' ? job : (job.url || "");
   jobUrl = jobUrl.replace(/[\n\r]/g, "").trim();
@@ -228,16 +230,26 @@ function broadcastQueueStatus(overrideStatus = null) {
   }
 }
 
-async function callOllama(prompt) {
-  const res = await fetch("http://localhost:11434/api/generate", {
-    method: "POST",
+async function callGemini(prompt, apiKey) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify({
-      model: "llama2",
-      prompt: prompt,
-      stream: false
+      contents: [{
+        parts: [{ text: prompt }]
+      }]
     })
   });
 
-  const data = await res.json();
-  return data.response;
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.error?.message || 'Gemini API call failed');
+  }
+
+  const data = await response.json();
+  return data.candidates[0].content.parts[0].text;
 }

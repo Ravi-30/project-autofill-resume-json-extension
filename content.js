@@ -51,6 +51,23 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 existing.remove();
             }
         }
+    } else if (request.action === "get_page_context") {
+        try {
+            const strategy = ATSStrategyRegistry.getStrategy(window.location.href, document);
+            if (strategy && typeof strategy.getPageContext === 'function') {
+                sendResponse(strategy.getPageContext());
+            } else {
+                // Global fallback if no strategy or method
+                sendResponse({
+                    pageTitle: document.title,
+                    headerText: document.querySelector('h1')?.innerText || "",
+                    url: window.location.href
+                });
+            }
+        } catch (e) {
+            sendResponse({});
+        }
+        return true;
     }
 });
 
@@ -92,28 +109,25 @@ function applyEdits(edits) {
 function attemptAutoFill() {
     autoFillState.debouncing = true;
     setTimeout(() => {
-        chrome.storage.local.get(['normalizedData', 'aiEnabled', 'resumeFile', 'autoRunActive', 'currentJobIndex', 'totalJobs'], (result) => {
-            // Early overlay injection if queue is active
-            if (result.autoRunActive) {
-                injectAutoRunOverlay(result.currentJobIndex, result.totalJobs);
-            }
+        if (!chrome.runtime?.id) return; // Prevent "Extension context invalidated"
 
-            /* 
-            console.log("AutoFill: Storage check", {
-                hasData: !!result.normalizedData,
-                autoRun: result.autoRunActive,
-                index: result.currentJobIndex,
-                total: result.totalJobs
+        try {
+            chrome.storage.local.get(['normalizedData', 'aiEnabled', 'resumeFile', 'autoRunActive', 'currentJobIndex', 'totalJobs'], (result) => {
+                if (chrome.runtime.lastError) return;
+
+                // Early overlay injection if queue is active
+                if (result.autoRunActive) {
+                    injectAutoRunOverlay(result.currentJobIndex, result.totalJobs);
+                }
+
+                if (result.normalizedData) {
+                    fillForm(result.normalizedData, result.aiEnabled || false, false, result.resumeFile, result.autoRunActive, result.currentJobIndex, result.totalJobs);
+                }
             });
-            */
-            if (result.normalizedData) {
-                // console.log("AutoFill: Automatically executing");
-                // console.log("  - autoRunActive:", result.autoRunActive);
-                // console.log("  - currentJobIndex:", result.currentJobIndex);
-                // console.log("  - totalJobs:", result.totalJobs);
-                fillForm(result.normalizedData, result.aiEnabled || false, false, result.resumeFile, result.autoRunActive, result.currentJobIndex, result.totalJobs);
-            }
-        });
+        } catch (error) {
+            console.debug("AutoFill: Storage get failed (likely context invalidated).", error);
+        }
+
         autoFillState.debouncing = false;
     }, 1500); // 1.5s debounce to let the SPA settle
 }
@@ -137,44 +151,64 @@ window.addEventListener('popstate', attemptAutoFill);
 
 // 3. Listen for Mutations (Dynamic Form Rendering / Success Detection)
 const observer = new MutationObserver((mutations) => {
+    if (!chrome.runtime?.id) {
+        observer.disconnect();
+        return;
+    }
+
     let shouldTrigger = false;
 
     // If auto-run is active, be much more aggressive about checking for success
-    chrome.storage.local.get(['autoRunActive'], (result) => {
-        if (result.autoRunActive) {
-            // Any structural change might be the "Thank You" message appearing
-            attemptAutoFill();
-            return;
-        }
+    try {
+        chrome.storage.local.get(['autoRunActive'], (result) => {
+            if (chrome.runtime.lastError) return;
 
-        for (const mutation of mutations) {
-            if (mutation.addedNodes.length > 0) {
-                mutation.addedNodes.forEach(node => {
-                    if (node.nodeType === Node.ELEMENT_NODE) {
-                        if (node.tagName === 'INPUT' || node.tagName === 'SELECT' || node.tagName === 'TEXTAREA' || node.querySelector('input, select, textarea')) {
-                            shouldTrigger = true;
-                        }
-                    }
-                });
+            if (result.autoRunActive) {
+                // Any structural change might be the "Thank You" message appearing
+                attemptAutoFill();
+                return;
             }
-        }
-        if (shouldTrigger) {
-            attemptAutoFill();
-        }
-    });
+
+            for (const mutation of mutations) {
+                if (mutation.addedNodes.length > 0) {
+                    mutation.addedNodes.forEach(node => {
+                        if (node.nodeType === Node.ELEMENT_NODE) {
+                            if (node.tagName === 'INPUT' || node.tagName === 'SELECT' || node.tagName === 'TEXTAREA' || node.querySelector('input, select, textarea')) {
+                                shouldTrigger = true;
+                            }
+                        }
+                    });
+                }
+            }
+            if (shouldTrigger) {
+                attemptAutoFill();
+            }
+        });
+    } catch (e) {
+        // Context likely invalidated, ignore
+    }
 });
 
 // Start observing
 observer.observe(document.body, { childList: true, subtree: true });
 
 // 4. Success Polling (Fail-safe for AJAX transitions)
-setInterval(() => {
-    chrome.storage.local.get(['autoRunActive'], (result) => {
-        if (result.autoRunActive && checkSuccessPage()) {
-            // console.log("AutoFill: Success detected via polling...");
-            attemptAutoFill();
-        }
-    });
+const successPollInterval = setInterval(() => {
+    if (!chrome.runtime?.id) {
+        clearInterval(successPollInterval);
+        return;
+    }
+
+    try {
+        chrome.storage.local.get(['autoRunActive'], (result) => {
+            if (chrome.runtime.lastError) return;
+            if (result.autoRunActive && checkSuccessPage()) {
+                attemptAutoFill();
+            }
+        });
+    } catch (e) {
+        // Context invalidated, ignore
+    }
 }, 5000);
 
 // 4. Global Click Listener to track manual submissions
@@ -189,7 +223,12 @@ document.addEventListener('mousedown', (e) => {
     if (isFinalSubmit || isNextStep) {
         // console.log("AutoFill: Manual navigation/submission button clicked, recording URL");
         if (isFinalSubmit) autoFillState.submissionAttempted = true;
-        chrome.storage.local.set({ lastSubmittedUrl: window.location.href });
+
+        if (chrome.runtime?.id) {
+            try {
+                chrome.storage.local.set({ lastSubmittedUrl: window.location.href });
+            } catch (e) { }
+        }
     }
 }, true);
 
@@ -268,6 +307,8 @@ async function fillForm(normalizedData, aiEnabled, isManualTrigger = false, resu
     let strategy;
     try {
         strategy = ATSStrategyRegistry.getStrategy(window.location.href, document);
+        console.log("AutoFill: Selected strategy:", strategy.constructor.name);
+        console.log("AutoFill: Executing strategy...");
         await strategy.execute(normalizedData, aiEnabled, resumeFile);
     } catch (err) {
         console.error("AutoFill: Strategy execution failed:", err);

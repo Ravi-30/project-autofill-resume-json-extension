@@ -9,13 +9,14 @@ class WorkdayStrategy extends GenericStrategy {
     }
 
     async execute(normalizedData, aiEnabled, resumeFile = null) {
-        // console.log("Executing WorkdayStrategy (Human-like speed)...");
+        this.aiEnabled = aiEnabled; // Store for state consistency
+        this.executed = true;
+        this.lastExecutedUrl = window.location.href;
+
         await super.execute(normalizedData, aiEnabled, resumeFile);
 
         // Handle Workday-specific custom country dropdowns that GenericStrategy might miss
         this._fillWorkdayCountry(normalizedData);
-
-        // console.log('Workday AutoFill complete!');
     }
 
     _fillWorkdayCountry(normalizedData) {
@@ -168,7 +169,10 @@ class WorkdayStrategy extends GenericStrategy {
 
             const text = (btn.innerText || btn.value || btn.getAttribute('aria-label') || "").toLowerCase().trim();
             // console.log(`WorkdayStrategy: Clicking submit button: "${text}"`);
-            btn.click();
+            btn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            setTimeout(() => {
+                btn.click();
+            }, 500); // Slight delay for Workday state sync
             return text.includes('submit') || text.includes('finish');
         }
 
@@ -193,20 +197,70 @@ class WorkdayStrategy extends GenericStrategy {
             return null;
         }
 
+        const identity = data?.identity || {};
+        const contact = data?.contact || {};
+        const employment = data?.employment?.history?.[0] || {};
+        const education = data?.education?.[0] || {};
+
         // Common Workday data-automation-ids
-        if (dataAutomationId.includes('legalname-first')) return { value: data.identity.first_name, confidence: 95 };
-        if (dataAutomationId.includes('legalname-last')) return { value: data.identity.last_name, confidence: 95 };
-        if (dataAutomationId.includes('email')) return { value: data.contact.email, confidence: 95 };
-        if (dataAutomationId.includes('phone-number')) return { value: data.contact.phone, confidence: 95 };
-        if (dataAutomationId.includes('address-line1')) return { value: data.contact.address, confidence: 95 };
-        if (dataAutomationId.includes('address-city')) return { value: data.contact.city, confidence: 95 };
-        if (dataAutomationId.includes('address-postal-code')) return { value: data.contact.zip_code, confidence: 95 };
+        if (dataAutomationId.includes('first') && dataAutomationId.includes('name')) return { value: identity.first_name, confidence: 95 };
+        if (dataAutomationId.includes('last') && dataAutomationId.includes('name')) return { value: identity.last_name, confidence: 95 };
+        if (dataAutomationId.includes('email')) return { value: contact.email, confidence: 95 };
+        if (dataAutomationId.includes('phone')) return { value: contact.phone, confidence: 95 };
+        if (dataAutomationId.includes('address-line1') || dataAutomationId.includes('addressline1')) return { value: contact.address, confidence: 95 };
+        if (dataAutomationId.includes('address-city') || dataAutomationId.includes('city')) return { value: contact.city, confidence: 95 };
+        if (dataAutomationId.includes('address-postal-code') || dataAutomationId.includes('postal')) return { value: contact.zip_code, confidence: 95 };
+
+        // Employment Data (Provides fieldKey to trigger GenericStrategy's multi-entry group tracking)
+        if (dataAutomationId.includes('jobtitle')) return { value: employment.position || " ", confidence: 95, fieldKey: 'employment.current_role' };
+        if (dataAutomationId.includes('company')) return { value: employment.company || employment.name || " ", confidence: 95, fieldKey: 'employment.current_company' };
+        if (dataAutomationId.includes('roledescription') || dataAutomationId.includes('description')) return { value: employment.summary || " ", confidence: 95, fieldKey: 'employment.work_description' };
+
+        // Education Data (Provides fieldKey to trigger GenericStrategy's multi-entry group tracking)
+        if (dataAutomationId.includes('school')) return { value: education.institution || " ", confidence: 95, fieldKey: 'education_flat.institution' };
+        if (dataAutomationId.includes('degree')) return { value: education.degree || " ", confidence: 95, fieldKey: 'education_flat.degree' };
+        if (dataAutomationId.includes('fieldofstudy')) return { value: education.major || " ", confidence: 95, fieldKey: 'education_flat.major' };
+
+        // Demographics
+        if (dataAutomationId.includes('gender')) return { value: identity.gender, confidence: 95, fieldKey: 'identity.gender' };
+        if (dataAutomationId.includes('ethnicity') || dataAutomationId.includes('race')) return { value: identity.ethnicity, confidence: 95, fieldKey: 'identity.ethnicity' };
+        if (dataAutomationId.includes('hispanic')) return { value: identity.hispanic_latino, confidence: 95, fieldKey: 'identity.hispanic_latino' };
+        if (dataAutomationId.includes('veteran')) return { value: identity.veteran_status, confidence: 95, fieldKey: 'identity.veteran_status' };
+        if (dataAutomationId.includes('disability')) return { value: identity.disability_status, confidence: 95, fieldKey: 'identity.disability_status' };
 
         // Specific mappings for Source and Prior Experience
-        if (dataAutomationId.includes('sourceprompt')) return { value: 'Job Search Site', confidence: 95 };
+        if (dataAutomationId.includes('sourceprompt')) return { value: 'LinkedIn', confidence: 95 };
         if (dataAutomationId.includes('previousemployee')) return { value: 'No', confidence: 95 };
+        if (dataAutomationId.includes('legalright')) return { value: 'Yes', confidence: 95, fieldKey: 'identity.authorized_to_work' };
+        if (dataAutomationId.includes('requiresponsorship')) return { value: 'No', confidence: 95, fieldKey: 'identity.sponsorship_required' };
 
         return null;
+    }
+
+    // Workday specific radio handling: labels are often far from inputs or use specific aria classes
+    handleRadioCheckbox(input, data) {
+        const dataAutomationId = (input.getAttribute('data-automation-id') || "").toLowerCase();
+
+        // Handle common Workday demographic radio groups
+        if (dataAutomationId.includes('gender') || dataAutomationId.includes('veteran') ||
+            dataAutomationId.includes('disability') || dataAutomationId.includes('hispanic')) {
+
+            const match = this.findWorkdaySpecificMatch(input, data);
+            if (match && match.value) {
+                const val = String(match.value).toLowerCase();
+                const parent = input.closest('[data-automation-id*="formField"]') || input.parentElement;
+                const label = parent?.querySelector('label')?.innerText.toLowerCase() || "";
+
+                // If the radio's specific label matches our value
+                if (label.includes(val)) {
+                    input.checked = true;
+                    this.setInputValue(input, null, 'green');
+                    return;
+                }
+            }
+        }
+
+        super.handleRadioCheckbox(input, data);
     }
 }
 

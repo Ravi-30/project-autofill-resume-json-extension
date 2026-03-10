@@ -5,14 +5,14 @@
 class BambooHrStrategy extends GenericStrategy {
     constructor() {
         super();
-        this.CONFIDENCE_THRESHOLD = 70; 
+        this.CONFIDENCE_THRESHOLD = 70;
     }
 
-    execute(normalizedData, aiEnabled) {
+    async execute(normalizedData, aiEnabled, resumeFile = null) {
         // console.log("Executing BambooHrStrategy...");
-        
+
         // Basic fallback execution. Override findValueForInput if specific DOM structures are known.
-        super.execute(normalizedData, aiEnabled);
+        await super.execute(normalizedData, aiEnabled, resumeFile);
     }
 }
 

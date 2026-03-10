@@ -5,6 +5,7 @@
 class GenericStrategy {
     constructor() {
         this.CONFIDENCE_THRESHOLD = 70;
+        this._hasUploadedResume = false;
 
         // Field Mapping Dictionary
         this.FIELD_MAPPING = {
@@ -20,10 +21,11 @@ class GenericStrategy {
             "contact.github": ["github", "github profile", "github url"],
             "contact.portfolio": ["website", "url", "portfolio", "link", "personal website"],
             "contact.address": ["address", "street", "address line 1"],
-            "contact.city": ["city", "town"],
+            "contact.city": ["city", "town", "location"],
             "contact.zip_code": ["zip", "postal", "code", "zip code"],
             "contact.state": ["state", "province", "region"],
             "contact.country": ["country", "country format", "country/region", "location country"],
+            "contact.location": ["current location", "location", "lives in", "city, state"],
             "summary.short": ["summary", "about", "bio", "description"],
             "summary.professional_statement": ["describe your relevant experiences", "professional statement", "highlight your industrial projects", "research record", "relevant experiences", "industrial projects", "3-4 sentences", "highlight your projects", "highlight your industrial projects and research record"],
             "summary.motivation": ["multiple roles", "motivation for each", "order them", "apply to multiple roles", "explain your motivation"],
@@ -39,16 +41,19 @@ class GenericStrategy {
             "education_flat.major": ["major", "field of study", "specialization", "discipline"],
             "education_flat.start_date": ["education start", "edu start", "graduation date", "education start date"],
             "education_flat.end_date": ["education end", "edu end", "graduation date", "education end date"],
-            "identity.gender": ["gender", "sex"],
-            "identity.ethnicity": ["ethnicity", "race"],
+            "identity.gender": ["gender", "sex", "gender identity"],
+            "identity.ethnicity": ["ethnicity", "race", "ethnic", "racial", "race/ethnicity", "self-identification"],
             "identity.hispanic_latino": ["hispanic", "latino", "hispanic or latino"],
             "identity.veteran_status": ["veteran", "military", "protected veteran"],
             "identity.disability_status": ["disability", "handicap", "voluntary self-identification"],
-            "identity.sponsorship_required": ["sponsorship", "visa", "need sponsorship", "legal right to work", "require sponsorship for employment visa status", "require employment visa sponsorship", "now or will you in the future require"],
+            "identity.sexual_orientation": ["sexual orientation", "orientation"],
+            "identity.transgender_status": ["transgender", "transgender status"],
+            "identity.sponsorship_required": ["sponsorship", "sponsor", "visa", "need sponsorship", "require sponsorship for employment visa status", "require employment visa sponsorship", "now or will you in the future require"],
             "identity.authorized_to_work": ["authorized to work", "legally authorized", "work authorization", "authorized to work in the united states", "eligible to work", "legal right to work"],
             "identity.relocation_open": ["open to relocation", "willing to relocate", "relocate", "open to relocate"],
             "availability.start_date": ["start date", "availability", "soonest start", "available to start", "soonest", "soonest you can start"],
-            "summary.onsite_sunnyvale": ["sunnyvale", "on-site", "work on-site", "sunnyvale office", "location", "sunnyvale, ca office"],
+            "summary.source": ["how did you hear", "how did you find out", "source"],
+            "summary.onsite_sunnyvale": ["sunnyvale", "on-site", "work on-site", "sunnyvale office", "sunnyvale, ca office"],
             "summary.ai_tool_experience": ["claude", "cursor", "ai tool", "claude code"],
             "identity.security_clearance_eligible": ["obtain and maintain", "government clearance", "security clearance", "u.s. government clearance", "requires u.s citizenship"]
         };
@@ -68,13 +73,14 @@ class GenericStrategy {
     }
 
     handleFileUpload(resumeFile) {
-        if (!resumeFile || !resumeFile.data) return;
+        if (!resumeFile || !resumeFile.data || this._hasUploadedResume) return;
 
         const fileInputs = document.querySelectorAll('input[type="file"]');
-        fileInputs.forEach(input => {
+        for (const input of fileInputs) {
             const labelTxt = this.extractFeatures(input).label_text.toLowerCase();
             const containerTxt = input.closest('div, fieldset')?.innerText?.toLowerCase() || "";
-            const combinedTxt = labelTxt + " " + containerTxt + " " + (input.name || "").toLowerCase() + " " + (input.id || "").toLowerCase();
+            const parentContainerTxt = input.parentElement?.parentElement?.innerText?.toLowerCase() || "";
+            const combinedTxt = labelTxt + " " + containerTxt + " " + parentContainerTxt + " " + (input.name || "").toLowerCase() + " " + (input.id || "").toLowerCase();
 
             // Match resume keywords but EXCLUDE fields clearly marked for cover letters
             const resumeKeywords = ["resume", "cv", "curriculum", "attach", "upload", "file", "document", "application"];
@@ -105,11 +111,31 @@ class GenericStrategy {
                     ['change', 'input', 'blur'].forEach(ev => {
                         input.dispatchEvent(new Event(ev, { bubbles: true }));
                     });
+
+                    // Set class state to prevent re-uploads on MutationObserver events
+                    this._hasUploadedResume = true;
+                    break; // Extremely important: Break out of the loop so we don't also upload into the Cover Letter input if keywords loosely match
                 } catch (e) {
                     console.error("AutoFill: Error attaching file", e);
                 }
             }
-        });
+        }
+    }
+    getPageContext() {
+        const title = document.title || "";
+        const h1 = document.querySelector('h1')?.innerText || "";
+
+        // Attempt to find company name from common meta tags or structural elements
+        const metaCompany = document.querySelector('meta[property="og:site_name"]')?.content ||
+            document.querySelector('meta[name="author"]')?.content ||
+            document.querySelector('.company-name, .brand-name, #logo img')?.alt || "";
+
+        return {
+            pageTitle: title,
+            headerText: h1,
+            companyName: metaCompany,
+            url: window.location.href
+        };
     }
 
     handleInitialEntry() {
@@ -355,7 +381,7 @@ class GenericStrategy {
                         // 3. Proximity Fallback
                         if (bestIdx === -1) {
                             const tracker = isEdu ? educationGroupTracker : employmentGroupTracker;
-                            const selector = isEdu ? '.education-entry, fieldset, .school-entry' : '.work-entry, .experience-entry, fieldset, .employment-entry, .job-entry';
+                            const selector = isEdu ? '.education-entry, fieldset, .school-entry, [data-automation-id*="education"]' : '.work-entry, .experience-entry, fieldset, .employment-entry, .job-entry, [data-automation-id*="workExperience"]';
                             const container = input.closest(`${selector}, div[id*="edu"], div[id*="work"], div[id*="employment"], section[id*="experience"]`);
 
                             const containers = Array.from(document.querySelectorAll(selector));
@@ -428,8 +454,24 @@ class GenericStrategy {
                 } else {
                     // Check if it's a required field that was missed
                     if (input.required || input.getAttribute('aria-required') === 'true') {
-                        this.highlightUnmatchedRequired(input);
-                        status = 'unmatched_required';
+                        console.log(`GenericStrategy: Required field found: ${input.name || input.id}. aiEnabled: ${aiEnabled}`);
+                        if (aiEnabled) {
+                            console.log(`GenericStrategy: Triggering AI fallback for ${input.name || input.id}`);
+                            // Trigger AI Fallback
+                            const aiValue = await this.triggerAIFallback(input, normalizedData);
+                            if (aiValue) {
+                                this.setInputValue(input, aiValue, 'green');
+                                status = 'filled';
+                                finalValue = aiValue;
+                                fillCount++;
+                            } else {
+                                this.highlightUnmatchedRequired(input);
+                                status = 'unmatched_required';
+                            }
+                        } else {
+                            this.highlightUnmatchedRequired(input);
+                            status = 'unmatched_required';
+                        }
                     }
                 }
 
@@ -491,9 +533,12 @@ class GenericStrategy {
     }
 
     extractFeatures(input) {
+        // Normalizes camelCase, snake_case, param-case to spaces so \b word boundaries work flawlessly
+        const normalizeIdName = str => (str || "").replace(/[-_]/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase();
+
         return {
-            name_attr: (input.name || "").toLowerCase(),
-            id_attr: (input.id || "").toLowerCase(),
+            name_attr: normalizeIdName(input.name),
+            id_attr: normalizeIdName(input.id),
             placeholder: (input.placeholder || "").toLowerCase(),
             aria_label: (input.getAttribute('aria-label') || "").toLowerCase(),
             label_text: (this.getLabelText(input) || "").toLowerCase(),
@@ -501,7 +546,7 @@ class GenericStrategy {
             input_type: (input.type || "text").toLowerCase(),
             normalized_combined: (typeof ResumeProcessor !== 'undefined') ?
                 ResumeProcessor.normalizeText(
-                    `${input.name || ""} ${input.id || ""} ${this.getLabelText(input)} ${input.getAttribute('aria-label') || ""}`
+                    `${normalizeIdName(input.name)} ${normalizeIdName(input.id)} ${this.getLabelText(input)} ${input.getAttribute('aria-label') || ""}`
                 ) : ""
         };
     }
@@ -517,15 +562,20 @@ class GenericStrategy {
         };
 
         let matchedPrimaryFeature = false;
+        const escapeRegExp = string => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
         keywords.forEach(keyword => {
             const kw = keyword.toLowerCase();
+            // Demands a strict word boundary. Fixes catastrophic bugs where searching for the "state" field internally matched the phrase "United States" in Veteran surveys.
+            const wordBoundaryRegex = new RegExp('(?:^|\\b)' + escapeRegExp(kw) + '(?:\\b|$)', 'i');
+
             for (const [featureName, weight] of Object.entries(keywordWeights)) {
                 const featureValue = features[featureName];
-                if (featureValue && featureValue.includes(kw)) {
+                if (featureValue && wordBoundaryRegex.test(featureValue)) {
                     keywordScore += weight;
                     matchedPrimaryFeature = true;
-                    if (featureValue === kw) {
+                    // Boost if it's the only thing in the attribute (ignoring asterisks)
+                    if (featureValue === kw || featureValue.replace(/[*:\s]/g, '') === kw) {
                         keywordScore += weight * 0.5;
                     }
                 }
@@ -712,15 +762,16 @@ class GenericStrategy {
             // If the label matches the value, or common synonyms
             const isPositiveMatch =
                 labelText.includes(val) ||
-                (val === 'yes' && (labelText === 'yes' || labelText === 'y')) ||
-                (val === 'no' && (labelText === 'no' || labelText === 'n')) ||
+                (val === 'yes' && (labelText === 'yes' || labelText === 'y' || labelText.includes('yes, i am hispanic') || labelText.includes('hispanic or latino'))) ||
+                (val === 'no' && (labelText === 'no' || labelText === 'n' || labelText.includes('not hispanic'))) ||
                 (val === 'male' && labelText === 'male') ||
                 (val === 'female' && labelText === 'female') ||
                 (val === 'non-binary' && labelText.includes('non-binary')) ||
                 ((val === 'no' || val === 'not_a_veteran') && (labelText.includes('not a protected veteran') || labelText.includes('no, i am not'))) ||
-                ((val === 'no' || val === 'no_disability') && (labelText.includes('no, i do not have a disability') || labelText.includes('no, i don\'t'))) ||
+                ((val === 'no' || val === 'no_disability') && (labelText.includes('no, i do not have a disability') || labelText.includes("no, i don't"))) ||
                 (val.includes('he/him') && labelText.includes('he/him')) ||
-                (val.includes('she/her') && labelText.includes('she/her'));
+                (val.includes('she/her') && labelText.includes('she/her')) ||
+                (val.includes('decline') && (labelText.includes('decline') || labelText.includes('choose not') || labelText.includes('wish not') || labelText.includes('prefer not')));
 
             if (isPositiveMatch) {
                 input.checked = true;
@@ -855,14 +906,23 @@ class GenericStrategy {
             }
 
             // 2. Compliance Equivalence (e.g., "no" matches "I don't have a disability")
-            if (val === 'no' && (optText.includes("not a protected veteran") || optText.includes("do not have a disability") || optText === 'no' || optText === 'n')) {
+            if (val === 'no' && (optText.includes("not a protected veteran") || optText.includes("do not have a disability") || optText.includes("not hispanic") || optText === 'no' || optText === 'n')) {
                 if (98 > highestConfidence) { bestOptionIndex = i; highestConfidence = 98; }
             }
-            if (val === 'yes' && (optText === 'yes' || optText === 'y' || optText === 'true' || optText.includes("i am a protected veteran"))) {
+            if (val === 'yes' && (optText === 'yes' || optText === 'y' || optText === 'true' || optText.includes("i am a protected veteran") || optText.includes("hispanic or latino"))) {
                 if (98 > highestConfidence) { bestOptionIndex = i; highestConfidence = 98; }
             }
             if ((val === 'male' || val === 'female') && optText === val) {
                 if (99 > highestConfidence) { bestOptionIndex = i; highestConfidence = 99; }
+            }
+            if (val.includes('decline') && (optText.includes('decline') || optText.includes('choose not') || optText.includes('prefer not') || optText.includes('wish not'))) {
+                if (98 > highestConfidence) { bestOptionIndex = i; highestConfidence = 98; }
+            }
+
+            // High confidence for explicit race/ethnicity matches regardless of parentheticals like "Asian (Not Hispanic or Latino)"
+            const raceKeywords = ['asian', 'white', 'black', 'african american', 'hispanic', 'latino', 'native american', 'pacific islander', 'alaska native', 'indigenous'];
+            if (raceKeywords.some(rk => val.includes(rk)) && optText.includes(val)) {
+                if (96 > highestConfidence) { bestOptionIndex = i; highestConfidence = 96; }
             }
 
             // 3. US Variation Equivalence (95)
@@ -988,6 +1048,88 @@ class GenericStrategy {
         rejectBtn.addEventListener('click', (e) => {
             e.preventDefault();
             cleanup();
+        });
+    }
+
+    /**
+     * Triggers the AI fallback for a specific input field.
+     * Collects context and sends a prompt to the Gemini API via background script.
+     */
+    async triggerAIFallback(input, normalizedData) {
+        console.log("GenericStrategy: Entered triggerAIFallback");
+        const features = this.extractFeatures(input);
+        const pageContext = this.getPageContext();
+        const labelText = features.label_text || features.aria_label || features.placeholder || "this field";
+
+        // Inject AI Thinking Styles if not present
+        if (!document.getElementById('af-ai-styles')) {
+            const style = document.createElement('style');
+            style.id = 'af-ai-styles';
+            style.textContent = `
+                @keyframes af-pulse-blue {
+                    0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); border-color: #3b82f6; }
+                    70% { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); border-color: #60a5fa; }
+                    100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); border-color: #3b82f6; }
+                }
+                .af-ai-thinking {
+                    animation: af-pulse-blue 1.5s infinite !important;
+                    background-color: #eff6ff !important;
+                    transition: all 0.3s ease !important;
+                    position: relative !important;
+                    z-index: 10 !important;
+                }
+            `;
+            document.head.appendChild(style);
+        }
+
+        // Apply visual feedback
+        input.classList.add('af-ai-thinking');
+        const originalPlaceholder = input.placeholder;
+        input.placeholder = "AI is thinking...";
+
+        console.log("GenericStrategy: Sending AI prompt for label:", labelText);
+
+        // Build a concise prompt with resume and job context
+        const prompt = `
+            You are an AI assistant helping a job seeker fill out an application.
+            Based on the following resume data, what is the best answer for the field labeled: "${labelText}"?
+
+            JOB CONTEXT:
+            - Company: ${pageContext.companyName}
+            - Job/Page Title: ${pageContext.headerText || pageContext.pageTitle}
+            - URL: ${pageContext.url}
+
+            FIELD CONTEXT:
+            - Label: ${features.label_text}
+            - Placeholder: ${features.placeholder}
+            - Nearby Text: ${features.nearby_text}
+            - Input Type: ${features.input_type}
+
+            RESUME DATA (JSON):
+            ${JSON.stringify(normalizedData, null, 2)}
+
+            INSTRUCTIONS:
+            - Provide ONLY the answer text. No conversational filler or explanations.
+            - If it's a short answer (e.g. why do you want to work here), keep it professional and under 150 words.
+            - If the question is about a specific skill not in the resume, provide a humble but positive answer based on the candidate's background.
+            - If you cannot find a relevant answer at all, return "NOT_FOUND".
+        `;
+
+        return new Promise((resolve) => {
+            chrome.runtime.sendMessage({ action: "generate_ai_answer", prompt: prompt }, (response) => {
+                // Remove visual feedback
+                input.classList.remove('af-ai-thinking');
+                input.placeholder = originalPlaceholder;
+
+                if (response && response.text && response.text.trim() !== "NOT_FOUND") {
+                    resolve(response.text.trim());
+                } else if (response && response.error) {
+                    console.error("AutoFill AI Error:", response.error);
+                    resolve(null);
+                } else {
+                    resolve(null);
+                }
+            });
         });
     }
 
