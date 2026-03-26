@@ -12,7 +12,6 @@ class GenericStrategy {
             "identity.first_name": ["first_name", "first name", "fname", "given name"],
             "identity.middle_name": ["middle_name", "middle name", "m.i.", "middle initial"],
             "identity.last_name": ["last_name", "last name", "lname", "surname", "family name"],
-            "identity.preferred_name": ["preferred_name", "preferred name", "preferred first name", "nickname"],
             "identity.full_name": ["name", "fullname", "full_name", "applicant name"],
             "identity.pronouns": ["pronouns", "preferred pronouns", "gender pronouns"],
             "contact.email": ["email", "e-mail", "mail", "email address"],
@@ -41,26 +40,46 @@ class GenericStrategy {
             "education_flat.major": ["major", "field of study", "specialization", "discipline"],
             "education_flat.start_date": ["education start", "edu start", "graduation date", "education start date"],
             "education_flat.end_date": ["education end", "edu end", "graduation date", "education end date"],
-            "identity.gender": ["gender", "sex", "gender identity"],
-            "identity.ethnicity": ["ethnicity", "race", "ethnic", "racial", "race/ethnicity", "self-identification"],
+            "identity.gender": ["gender", "sex", "gender identity", "what is your gender", "sexual identity"],
+            "identity.ethnicity": ["ethnicity", "race", "ethnic", "racial", "race/ethnicity", "self-identification", "what is your race"],
             "identity.hispanic_latino": ["hispanic", "latino", "hispanic or latino"],
-            "identity.veteran_status": ["veteran", "military", "protected veteran"],
-            "identity.disability_status": ["disability", "handicap", "voluntary self-identification"],
-            "identity.sexual_orientation": ["sexual orientation", "orientation"],
+            "identity.veteran_status": ["veteran", "military", "protected veteran", "veteran status", "i am not a veteran"],
+            "identity.disability_status": ["disability", "handicap", "voluntary self-identification", "physical or mental impairment"],
+            "identity.sexual_orientation": ["sexual orientation", "orientation", "sexual identity"],
             "identity.transgender_status": ["transgender", "transgender status"],
             "identity.sponsorship_required": ["sponsorship", "sponsor", "visa", "need sponsorship", "require sponsorship for employment visa status", "require employment visa sponsorship", "now or will you in the future require"],
             "identity.authorized_to_work": ["authorized to work", "legally authorized", "work authorization", "authorized to work in the united states", "eligible to work", "legal right to work"],
             "identity.relocation_open": ["open to relocation", "willing to relocate", "relocate", "open to relocate"],
             "availability.start_date": ["start date", "availability", "soonest start", "available to start", "soonest", "soonest you can start"],
-            "summary.source": ["how did you hear", "how did you find out", "source"],
+            "summary.source": ["how did you hear", "how did you find out", "source", "how_did_you_hear"],
             "summary.onsite_sunnyvale": ["sunnyvale", "on-site", "work on-site", "sunnyvale office", "sunnyvale, ca office"],
             "summary.ai_tool_experience": ["claude", "cursor", "ai tool", "claude code"],
-            "identity.security_clearance_eligible": ["obtain and maintain", "government clearance", "security clearance", "u.s. government clearance", "requires u.s citizenship"]
+            "identity.security_clearance_eligible": ["obtain and maintain", "government clearance", "security clearance", "u.s. government clearance", "requires u.s citizenship"],
+            "contact.linkedin_manual": ["urls[linkedin]", "linkedin_url"],
+            "contact.github_manual": ["urls[github]", "github_url"],
+            "contact.portfolio_manual": ["urls[portfolio]", "portfolio_url"]
         };
     }
 
     getUSVariations() {
-        return ['us', 'usa', 'united states', 'united states of america', 'united states usa', 'us usa'];
+        return ['us', 'usa', 'united states', 'united states of america', 'united states (usa)', 'us (usa)', 'u.s.a.', 'u.s.'];
+    }
+
+    getStateVariations(state) {
+        const states = {
+            'alabama': 'AL', 'alaska': 'AK', 'arizona': 'AZ', 'arkansas': 'AR', 'california': 'CA',
+            'colorado': 'CO', 'connecticut': 'CT', 'delaware': 'DE', 'florida': 'FL', 'georgia': 'GA',
+            'hawaii': 'HI', 'idaho': 'ID', 'illinois': 'IL', 'indiana': 'IN', 'iowa': 'IA',
+            'kansas': 'KS', 'kentucky': 'KY', 'louisiana': 'LA', 'maine': 'ME', 'maryland': 'MD',
+            'massachusetts': 'MA', 'michigan': 'MI', 'minnesota': 'MN', 'mississippi': 'MS', 'missouri': 'MO',
+            'montana': 'MT', 'nebraska': 'NE', 'nevada': 'NV', 'new hampshire': 'NH', 'new jersey': 'NJ',
+            'new mexico': 'NM', 'new york': 'NY', 'north carolina': 'NC', 'north dakota': 'ND', 'ohio': 'OH',
+            'oklahoma': 'OK', 'oregon': 'OR', 'pennsylvania': 'PA', 'rhode island': 'RI', 'south carolina': 'SC',
+            'south dakota': 'SD', 'tennessee': 'TN', 'texas': 'TX', 'utah': 'UT', 'vermont': 'VT',
+            'virginia': 'VA', 'washington': 'WA', 'west virginia': 'WV', 'wisconsin': 'WI', 'wyoming': 'WY'
+        };
+        const s = String(state).toLowerCase().trim();
+        return [s, states[s], Object.keys(states).find(key => states[key].toLowerCase() === s)].filter(Boolean);
     }
 
     sleep(ms) {
@@ -73,11 +92,22 @@ class GenericStrategy {
     }
 
     handleFileUpload(resumeFile) {
-        if (!resumeFile || !resumeFile.data || this._hasUploadedResume) return;
+        if (!resumeFile || !resumeFile.data) return;
+
+        // NEW: Persistence check across strategy instances/re-injections using sessionStorage
+        const sessionKey = `af_uploaded_${window.location.hostname}`;
+        if (sessionStorage.getItem(sessionKey)) {
+            // 
+            return;
+        }
 
         const fileInputs = document.querySelectorAll('input[type="file"]');
         for (const input of fileInputs) {
-            const labelTxt = this.extractFeatures(input).label_text.toLowerCase();
+            // Skip if the input already has a file or has our marker attribute
+            if ((input.files && input.files.length > 0) || input.dataset.afUploaded === 'true') continue;
+
+            const features = this.extractFeatures(input);
+            const labelTxt = features.label_text.toLowerCase();
             const containerTxt = input.closest('div, fieldset')?.innerText?.toLowerCase() || "";
             const parentContainerTxt = input.parentElement?.parentElement?.innerText?.toLowerCase() || "";
             const combinedTxt = labelTxt + " " + containerTxt + " " + parentContainerTxt + " " + (input.name || "").toLowerCase() + " " + (input.id || "").toLowerCase();
@@ -88,7 +118,7 @@ class GenericStrategy {
             const isCoverLetterField = combinedTxt.includes("cover");
 
             if (isResumeField && !isCoverLetterField) {
-                // console.log("AutoFill: Attempting to attach resume to", input.name || input.id);
+                
 
                 try {
                     // Convert base64 Data URL to Blob
@@ -102,19 +132,19 @@ class GenericStrategy {
                     const blob = new Blob([ab], { type: mimeString });
                     const file = new File([blob], resumeFile.name, { type: mimeString });
 
-                    // Use DataTransfer to simulate file selection
                     const dataTransfer = new DataTransfer();
                     dataTransfer.items.add(file);
                     input.files = dataTransfer.files;
 
-                    // Trigger events
                     ['change', 'input', 'blur'].forEach(ev => {
                         input.dispatchEvent(new Event(ev, { bubbles: true }));
                     });
 
-                    // Set class state to prevent re-uploads on MutationObserver events
+                    // Set both the DOM attribute and the sessionStorage flag
+                    input.dataset.afUploaded = 'true';
+                    sessionStorage.setItem(sessionKey, 'true');
                     this._hasUploadedResume = true;
-                    break; // Extremely important: Break out of the loop so we don't also upload into the Cover Letter input if keywords loosely match
+                    break; 
                 } catch (e) {
                     console.error("AutoFill: Error attaching file", e);
                 }
@@ -169,7 +199,7 @@ class GenericStrategy {
             return getZIndex(b) - getZIndex(a);
         });
 
-        // console.log("AutoFill: handleInitialEntry found", visibleButtons.length, "visible buttons");
+        // 
 
         // Find the best candidate for an entry button
         const entryBtn = visibleButtons.find(b => {
@@ -178,53 +208,52 @@ class GenericStrategy {
 
             // Priority 1: Clear "Apply Manually" indicators (to skip popups)
             if (text.includes('apply manually') || text.includes('fill manually') || text.includes('enter manually')) {
-                // console.log("AutoFill: Matched 'manual' pattern");
+                // 
                 return true;
             }
             if (automationId === 'applymanually' || automationId.includes('manual')) {
-                // console.log("AutoFill: Matched automation ID 'manual' pattern");
+                // 
                 return true;
             }
 
             // Priority 2: Exact match for standard "Apply" buttons
             if (entryPatterns.some(p => text === p)) {
-                // console.log("AutoFill: Matched exact text pattern:", text);
+                // 
                 return true;
             }
 
             // Priority 3: Partial match
             const matches = entryPatterns.some(p => text.includes(p));
             if (matches) {
-                // console.log("AutoFill: Matched partial text pattern:", text);
+                // 
             }
             return matches;
         });
 
         if (entryBtn) {
-            // console.log("AutoFill: Automatically clicking entry/popup button:", entryBtn.innerText || entryBtn.value || entryBtn.getAttribute('aria-label'));
+            // );
             // Ensure button is in view before clicking
-            entryBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            // entryBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
             setTimeout(() => {
-                // console.log("AutoFill: Executing click on entry button");
+                // 
                 entryBtn.click();
             }, 200);
             return true;
         }
 
-        // console.log("AutoFill: No matching entry button found");
+        // 
         return false;
     }
 
     async execute(normalizedData, aiEnabled, resumeFile = null) {
-        // console.log("Executing GenericStrategy (Human-like speed)...");
-        // console.log("=== RESUME DATA AVAILABLE ===");
-        // console.log("  First Name:", normalizedData?.identity?.first_name);
-        // console.log("  Last Name:", normalizedData?.identity?.last_name);
-        // console.log("  Email:", normalizedData?.contact?.email);
-        // console.log("  Phone:", normalizedData?.contact?.phone);
-        // console.log("  Education entries:", normalizedData?.education?.length || 0);
-        // console.log("  Employment entries:", normalizedData?.employment?.history?.length || 0);
-        // console.log("============================");
+        // 
+        // 
+        // 
+        // 
+        // 
+        // 
+        // 
+        // 
 
         // --- Handle Initial Entry (Popups or Apply buttons) ---
         const entryClicked = this.handleInitialEntry();
@@ -272,7 +301,7 @@ class GenericStrategy {
                     });
 
                     if (addBtn) {
-                        // console.log(`AutoFill: Clicking "Add" button for count ${containerCount} < ${section.data.length}`);
+                        // 
                         addBtn.click();
                         // We click only once per execute cycle. 
                         // The MutationObserver in content.js will trigger execute() again if the DOM changes.
@@ -284,20 +313,18 @@ class GenericStrategy {
         handleAddButtons();
 
         const inputs = document.querySelectorAll('input, textarea, select');
-        // console.log("✓ Found", inputs.length, "form inputs on page");
 
         // Log first few inputs for debugging
         let fillCount = 0;
-        // console.log("=== FORM INPUTS ON PAGE ===");
         Array.from(inputs).slice(0, 10).forEach((input, idx) => {
             const type = input.type || input.tagName;
             const name = input.name || input.id || '(unnamed)';
             const value = input.value?.substring(0, 30) || '(empty)';
             const hidden = input.getAttribute('type') === 'hidden' ? ' [HIDDEN]' : '';
             const disabled = input.disabled ? ' [DISABLED]' : '';
-            // console.log(`  [${idx}] ${type} name="${name}" value="${value}"${hidden}${disabled}`);
+            // 
         });
-        // console.log("===========================");
+        // 
 
 
         // This array will hold the report data for the side panel
@@ -311,6 +338,10 @@ class GenericStrategy {
             // Allow hidden fields if they have a name or id (likely state holders for custom dropdowns)
             if (input.type === 'hidden' && !input.id && !input.name && !input.getAttribute('data-automation-id')) continue;
             if (input.disabled || input.readOnly) continue;
+
+            // Skip fields the user has manually edited — their corrections are sacred.
+            // The 'afUserLocked' flag is set by the isTrusted listener in content.js.
+            if (input.dataset.afUserLocked === 'true') continue;
 
             // Skip inputs that are already filled — prevents re-triggering confidence popups
             // on second pass (e.g. from MutationObserver after initial fill)
@@ -440,13 +471,13 @@ class GenericStrategy {
                     if (match.confidence < SILENT_SKIP_THRESHOLD) {
                         // Too low to be useful — ignore silently
                     } else if (match.confidence >= this.CONFIDENCE_THRESHOLD) {
-                        // console.log(`  ✓ Filling: ${input.name || input.id || '?'} = "${match.value?.substring(0, 40)}..."`);
+                        // }..."`);
                         this.setInputValue(input, match.value, 'green');
                         status = 'filled';
                         finalValue = match.value;
                         fillCount++;
                     } else {
-                        // console.log(`  ⚠ Low confidence (${match.confidence}%): ${input.name || input.id || '?'} = "${match.value?.substring(0, 40)}..."`);
+                        // : ${input.name || input.id || '?'} = "${match.value?.substring(0, 40)}..."`);
                         this.promptUserConfirmation(input, match.value, match.confidence);
                         status = 'low_confidence';
                         finalValue = match.value; // It is suggested, though not explicitly set yet
@@ -454,9 +485,9 @@ class GenericStrategy {
                 } else {
                     // Check if it's a required field that was missed
                     if (input.required || input.getAttribute('aria-required') === 'true') {
-                        console.log(`GenericStrategy: Required field found: ${input.name || input.id}. aiEnabled: ${aiEnabled}`);
+                        
                         if (aiEnabled) {
-                            console.log(`GenericStrategy: Triggering AI fallback for ${input.name || input.id}`);
+                            
                             // Trigger AI Fallback
                             const aiValue = await this.triggerAIFallback(input, normalizedData);
                             if (aiValue) {
@@ -493,14 +524,14 @@ class GenericStrategy {
                     await this.sleep(Math.floor(Math.random() * 500) + 200);
                 }
             }
+        }
 
-
-            // Send the fill report to the sidepanel
+        // Send the fill report to the sidepanel once, after all fields are processed
+        if (fillReport.length > 0) {
             chrome.runtime.sendMessage({
                 action: 'fill_report',
                 report: fillReport
             });
-
         }
     }
 
@@ -624,7 +655,7 @@ class GenericStrategy {
         // Debug logging for every field being checked
         const fieldName = input.name || input.id || '(unnamed)';
         const fieldLabel = this.getLabelText(input) || '(no label)';
-        // console.log(`    [Checking] ${fieldName} | Label: "${fieldLabel}"`);
+        // 
 
         // --- 1. Attempt Domain-Specific Dynamic Reverse Lookups ---
         // Guard: skip this if the label matches a professional statement question.
@@ -680,7 +711,7 @@ class GenericStrategy {
 
         // Fast-path: if this is clearly a professional statement field, return it directly
         if (isProfessionalStatementField && normalizedData.summary?.professional_statement) {
-            // console.log(`      ✓ MATCHED (Professional Statement): "${normalizedData.summary.professional_statement.substring(0, 50)}..."`);
+            // : "${normalizedData.summary.professional_statement.substring(0, 50)}..."`);
             return {
                 value: normalizedData.summary.professional_statement,
                 confidence: 100,
@@ -690,7 +721,7 @@ class GenericStrategy {
 
         // Fast-path: if this is clearly a motivation/multiple-roles field, return it directly
         if (isMotivationField && normalizedData.summary?.motivation) {
-            // console.log(`      ✓ MATCHED (Motivation): "${normalizedData.summary.motivation.substring(0, 50)}..."`);
+            // : "${normalizedData.summary.motivation.substring(0, 50)}..."`);
             return {
                 value: normalizedData.summary.motivation,
                 confidence: 100,
@@ -709,41 +740,41 @@ class GenericStrategy {
 
                 if (value) {
                     bestMatch = { value, confidence, fieldKey };
-                    // console.log(`      → Candidate: ${fieldKey} (confidence: ${confidence}%) = "${String(value).substring(0, 40)}..."`);
+                    //  = "${String(value).substring(0, 40)}..."`);
                 }
             }
         }
 
         if (bestMatch.confidence > 0) {
-            // console.log(`      ✓ SELECTED: ${bestMatch.fieldKey} (${bestMatch.confidence}%)`);
+            // `);
             return bestMatch;
         } else {
             // --- Custom Hardcoded Fallbacks for High-Confidence Questions ---
             if (features.normalized_combined.includes("government clearance") ||
                 (features.normalized_combined.includes("obtain") && features.normalized_combined.includes("maintain") && features.normalized_combined.includes("clearance"))) {
-                // console.log(`      ✓ MATCHED (Hardcoded Security Clearance Fallback): "Yes"`);
+                // : "Yes"`);
                 return { value: "Yes", confidence: 95, fieldKey: "identity.security_clearance_eligible" };
             }
 
             // Fallback for Authorized to Work (Default: Yes)
             if (features.normalized_combined.includes("authorized") && features.normalized_combined.includes("work")) {
-                // console.log(`      ✓ MATCHED (Hardcoded Authorized to Work Fallback): "Yes"`);
+                // : "Yes"`);
                 return { value: "Yes", confidence: 90, fieldKey: "identity.authorized_to_work" };
             }
 
             // Fallback for Sponsorship (Default: No)
             if (features.normalized_combined.includes("sponsorship") || features.normalized_combined.includes("visa")) {
-                // console.log(`      ✓ MATCHED (Hardcoded Sponsorship Fallback): "No"`);
+                // : "No"`);
                 return { value: "No", confidence: 90, fieldKey: "identity.sponsorship_required" };
             }
 
             // Fallback for Relocation (Default: Yes)
             if (features.normalized_combined.includes("relocation") || features.normalized_combined.includes("relocate")) {
-                // console.log(`      ✓ MATCHED (Hardcoded Relocation Fallback): "Yes"`);
+                // : "Yes"`);
                 return { value: "Yes", confidence: 85, fieldKey: "identity.relocation_open" };
             }
 
-            // console.log(`      ✗ NO MATCH FOUND`);
+            // 
             return null;
         }
     }
@@ -824,37 +855,29 @@ class GenericStrategy {
             if (input.tagName === 'SELECT') {
                 this.setSelectValue(input, value);
             } else {
-                // Use the native setter to bypass React's value interception,
-                // then dispatch a synthetic input event so React's onChange fires.
-                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-                    window.HTMLInputElement.prototype, 'value'
-                )?.set;
-                const nativeTextAreaValueSetter = Object.getOwnPropertyDescriptor(
-                    window.HTMLTextAreaElement.prototype, 'value'
-                )?.set;
+                // Use the native setter to bypass React's value interception
+                const proto = input.tagName === 'TEXTAREA'
+                    ? window.HTMLTextAreaElement.prototype
+                    : window.HTMLInputElement.prototype;
+                const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
 
-                if (input.tagName === 'TEXTAREA' && nativeTextAreaValueSetter) {
-                    nativeTextAreaValueSetter.call(input, value);
-                } else if (nativeInputValueSetter) {
-                    nativeInputValueSetter.call(input, value);
+                if (nativeSetter) {
+                    nativeSetter.call(input, value);
                 } else {
                     input.value = value;
                 }
+
+                // Also update the value tracker if it exists (React 15/16+)
+                const tracker = input._valueTracker;
+                if (tracker) {
+                    tracker.setValue('');
+                }
             }
 
-            // Dispatch events to satisfy React (needs bubbles:true + composed:true for shadow DOM)
+            // Dispatch events to satisfy modern frameworks
             ['input', 'change', 'blur'].forEach(eventType => {
-                const event = new Event(eventType, { bubbles: true, composed: true });
-                input.dispatchEvent(event);
+                input.dispatchEvent(new Event(eventType, { bubbles: true, composed: true }));
             });
-
-            // Also try the React _valueTracker approach as a belt-and-suspenders
-            const tracker = input._valueTracker;
-            if (tracker) {
-                tracker.setValue(''); // Trick React into thinking value changed
-            }
-            // Re-dispatch input after tracker reset
-            input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
         }
 
         const originalBg = input.style.backgroundColor;
@@ -885,8 +908,6 @@ class GenericStrategy {
 
         const normalize = (s) => String(s).toLowerCase().replace(/[^\w\s]/g, '').trim();
         const val = normalize(value);
-
-        // --- US Variation Equivalence ---
         const usVariations = this.getUSVariations();
         const isUSValue = usVariations.includes(val);
 
@@ -898,75 +919,60 @@ class GenericStrategy {
             const optText = normalize(option.text);
             const optVal = normalize(option.value);
 
-            // 1. Perfect match (100)
+            // 1. Exact match
             if (optVal === val || optText === val) {
                 bestOptionIndex = i;
                 highestConfidence = 100;
                 break;
             }
 
-            // 2. Compliance Equivalence (e.g., "no" matches "I don't have a disability")
+            // 2. State Variation Match
+            const stateVariations = this.getStateVariations(value);
+            if (stateVariations.length > 1) {
+                if (stateVariations.some(v => normalize(v) === optVal || normalize(v) === optText)) {
+                    if (99 > highestConfidence) { bestOptionIndex = i; highestConfidence = 99; }
+                }
+            }
+
+            // 3. Logic Equivalence (Yes/No/Decline)
             if (val === 'no' && (optText.includes("not a protected veteran") || optText.includes("do not have a disability") || optText.includes("not hispanic") || optText === 'no' || optText === 'n')) {
                 if (98 > highestConfidence) { bestOptionIndex = i; highestConfidence = 98; }
             }
             if (val === 'yes' && (optText === 'yes' || optText === 'y' || optText === 'true' || optText.includes("i am a protected veteran") || optText.includes("hispanic or latino"))) {
                 if (98 > highestConfidence) { bestOptionIndex = i; highestConfidence = 98; }
             }
-            if ((val === 'male' || val === 'female') && optText === val) {
-                if (99 > highestConfidence) { bestOptionIndex = i; highestConfidence = 99; }
-            }
-            if (val.includes('decline') && (optText.includes('decline') || optText.includes('choose not') || optText.includes('prefer not') || optText.includes('wish not'))) {
+            if (val.includes('decline') && (optText.includes('decline') || optText.includes('choose not') || optText.includes('prefer not'))) {
                 if (98 > highestConfidence) { bestOptionIndex = i; highestConfidence = 98; }
             }
 
-            // High confidence for explicit race/ethnicity matches regardless of parentheticals like "Asian (Not Hispanic or Latino)"
-            const raceKeywords = ['asian', 'white', 'black', 'african american', 'hispanic', 'latino', 'native american', 'pacific islander', 'alaska native', 'indigenous'];
-            if (raceKeywords.some(rk => val.includes(rk)) && optText.includes(val)) {
-                if (96 > highestConfidence) { bestOptionIndex = i; highestConfidence = 96; }
-            }
-
-            // 3. US Variation Equivalence (95)
+            // 3. US Variation Equivalence
             if (isUSValue && (usVariations.includes(optVal) || usVariations.includes(optText))) {
-                if (95 > highestConfidence) {
-                    bestOptionIndex = i;
-                    highestConfidence = 95;
-                }
+                if (95 > highestConfidence) { bestOptionIndex = i; highestConfidence = 95; }
             }
 
-            // 3. Dialing Code Matching (92)
-            // If the value is "United States" and option contains "+1", or vice versa
-            if (isUSValue && (optText.includes('1') || optVal.includes('1')) && (optText.includes('+') || optVal.includes('+'))) {
-                if (92 > highestConfidence) {
-                    bestOptionIndex = i;
-                    highestConfidence = 92;
-                }
+            // 4. Dialing Code Matching (+1 etc)
+            if (isUSValue && (optText.includes('+1') || optVal.includes('+1'))) {
+                if (92 > highestConfidence) { bestOptionIndex = i; highestConfidence = 92; }
             }
 
-            // 4. Starts with (90)
+            // 5. Starts with / Includes
             if (optText.startsWith(val) || val.startsWith(optText)) {
-                if (90 > highestConfidence) {
-                    bestOptionIndex = i;
-                    highestConfidence = 90;
-                }
-            }
-            // 5. Includes (70)
-            else if (optText.includes(val) || val.includes(optText)) {
-                if (70 > highestConfidence) {
-                    bestOptionIndex = i;
-                    highestConfidence = 70;
-                }
+                if (90 > highestConfidence) { bestOptionIndex = i; highestConfidence = 90; }
+            } else if (optText.includes(val) || val.includes(optText)) {
+                if (70 > highestConfidence) { bestOptionIndex = i; highestConfidence = 70; }
             }
         }
 
         if (bestOptionIndex !== -1) {
             select.selectedIndex = bestOptionIndex;
-            // Trigger events
-            ['change', 'input', 'blur'].forEach(ev => {
-                select.dispatchEvent(new Event(ev, { bubbles: true }));
+            ['input', 'change', 'blur'].forEach(ev => {
+                select.dispatchEvent(new Event(ev, { bubbles: true, composed: true }));
             });
         } else {
-            // Fallback: try setting value directly
             select.value = value;
+            ['input', 'change', 'blur'].forEach(ev => {
+                select.dispatchEvent(new Event(ev, { bubbles: true, composed: true }));
+            });
         }
     }
 
@@ -975,6 +981,10 @@ class GenericStrategy {
     }
 
     promptUserConfirmation(input, suggestion, confidence) {
+        // Deduplication guard: only show one popup per input element
+        if (input.dataset.afPopup === 'shown') return;
+        input.dataset.afPopup = 'shown';
+
         const originalBorder = input.style.border;
         const originalBackground = input.style.backgroundColor;
 
@@ -1037,6 +1047,7 @@ class GenericStrategy {
             container.remove();
             input.style.border = originalBorder;
             input.style.backgroundColor = originalBackground;
+            delete input.dataset.afPopup; // Allow popup to reappear if user manually triggers
         };
 
         acceptBtn.addEventListener('click', (e) => {
@@ -1056,7 +1067,7 @@ class GenericStrategy {
      * Collects context and sends a prompt to the Gemini API via background script.
      */
     async triggerAIFallback(input, normalizedData) {
-        console.log("GenericStrategy: Entered triggerAIFallback");
+        
         const features = this.extractFeatures(input);
         const pageContext = this.getPageContext();
         const labelText = features.label_text || features.aria_label || features.placeholder || "this field";
@@ -1087,9 +1098,10 @@ class GenericStrategy {
         const originalPlaceholder = input.placeholder;
         input.placeholder = "AI is thinking...";
 
-        console.log("GenericStrategy: Sending AI prompt for label:", labelText);
+        
 
         // Build a concise prompt with resume and job context
+        const prunedData = (typeof ResumeProcessor !== 'undefined') ? ResumeProcessor.pruneForAi(normalizedData) : normalizedData;
         const prompt = `
             You are an AI assistant helping a job seeker fill out an application.
             Based on the following resume data, what is the best answer for the field labeled: "${labelText}"?
@@ -1097,7 +1109,6 @@ class GenericStrategy {
             JOB CONTEXT:
             - Company: ${pageContext.companyName}
             - Job/Page Title: ${pageContext.headerText || pageContext.pageTitle}
-            - URL: ${pageContext.url}
 
             FIELD CONTEXT:
             - Label: ${features.label_text}
@@ -1106,13 +1117,13 @@ class GenericStrategy {
             - Input Type: ${features.input_type}
 
             RESUME DATA (JSON):
-            ${JSON.stringify(normalizedData, null, 2)}
+            ${JSON.stringify(prunedData, null, 2)}
 
             INSTRUCTIONS:
-            - Provide ONLY the answer text. No conversational filler or explanations.
-            - If it's a short answer (e.g. why do you want to work here), keep it professional and under 150 words.
-            - If the question is about a specific skill not in the resume, provide a humble but positive answer based on the candidate's background.
-            - If you cannot find a relevant answer at all, return "NOT_FOUND".
+            - PROVIDE ONLY THE RAW ANSWER TEXT. No "The answer is...", no quotes, no explanations.
+            - For standard fields (name, email, phone, etc.), match the resume EXACTLY.
+            - If it's a short answer (e.g. "Why us?"), keep it under 100 words and professional.
+            - If the resume doesn't contain the answer, return "NOT_FOUND".
         `;
 
         return new Promise((resolve) => {
@@ -1198,13 +1209,13 @@ class GenericStrategy {
         if (eligibleButtons.length > 0) {
             const btn = eligibleButtons[0];
             const text = (btn.innerText || btn.value || btn.getAttribute('aria-label') || "").toLowerCase().trim();
-            // console.log(`AutoFill: Found auto-submit button: "${text}" (score-based selection)`);
+            // `);
 
             // Fast-track: Some forms have a required consent checkbox right before submission that was missed
             const requiredCheckboxes = document.querySelectorAll('input[type="checkbox"][required], input[type="checkbox"][aria-required="true"]');
             requiredCheckboxes.forEach(cb => {
                 if (!cb.checked) {
-                    // console.log("AutoFill: Auto-checking missed required checkbox before submit");
+                    // 
                     cb.checked = true;
                     ['change', 'input', 'click'].forEach(e => cb.dispatchEvent(new Event(e, { bubbles: true })));
                 }
@@ -1220,7 +1231,7 @@ class GenericStrategy {
             return finalScore >= 90;
         }
 
-        // console.log("AutoFill: Could not find a clear submit button.");
+        // 
         return false;
     }
 }

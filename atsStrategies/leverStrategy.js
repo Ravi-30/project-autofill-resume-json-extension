@@ -9,9 +9,7 @@ class LeverStrategy extends GenericStrategy {
     }
 
     async execute(normalizedData, aiEnabled, resumeFile = null) {
-        // console.log("Executing LeverStrategy (Human-like speed)...");
         await super.execute(normalizedData, aiEnabled, resumeFile);
-        // console.log('Lever AutoFill complete!');
     }
 
     findValueForInput(input, normalizedData) {

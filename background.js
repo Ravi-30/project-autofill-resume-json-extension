@@ -12,14 +12,29 @@ try {
 } catch (e) {
   console.warn("SidePanel API not fully supported or error during init:", e);
 }
-chrome.runtime.onInstalled.addListener(() => {
-  // console.log("Extension installed");
 
-  chrome.contextMenus.create({
-    id: "generateAIAnswer",
-    title: "Generate Answer with AI",
-    contexts: ["editable"]
-  });
+// Track open side panels per window
+const openSidePanelWindows = new Set();
+
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name === "sidepanel") {
+    let windowId = null;
+
+    port.onMessage.addListener((msg) => {
+      if (msg.action === 'register_window' && msg.windowId) {
+        windowId = msg.windowId;
+        openSidePanelWindows.add(windowId);
+      }
+    });
+
+    port.onDisconnect.addListener(() => {
+      if (windowId) {
+        openSidePanelWindows.delete(windowId);
+      }
+    });
+  }
+});
+chrome.runtime.onInstalled.addListener(() => {
 
   chrome.contextMenus.create({
     id: "openSidePanel",
@@ -35,9 +50,7 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  if (info.menuItemId === "generateAIAnswer") {
-    chrome.tabs.sendMessage(tab.id, { action: "get_question_text" });
-  } else if (info.menuItemId === "openSidePanel") {
+  if (info.menuItemId === "openSidePanel") {
     chrome.sidePanel.open({ tabId: tab.id });
   } else if (info.menuItemId === "forceFillData") {
     // Retrieve resume data and send to content script
@@ -57,25 +70,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 });
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  // AI Handlers Removed
+  /*
   if (request.action === "generate_ai_answer") {
-    console.log("AutoFill: Received generate_ai_answer request");
-    chrome.storage.local.get(['geminiApiKey'], (result) => {
-      if (!result.geminiApiKey) {
-        console.error("AutoFill: Missing Gemini API Key");
-        sendResponse({ error: "Missing Gemini API Key. Please enter it in the extension side panel." });
-        return;
-      }
-      console.log("AutoFill: Calling Gemini with prompt length:", request.prompt?.length);
-      callGemini(request.prompt, result.geminiApiKey).then(aiResult => {
-        console.log("AutoFill: Gemini responded successfully");
-        sendResponse({ text: aiResult });
-      }).catch(err => {
-        console.error("AutoFill: Gemini API Error:", err.message);
-        sendResponse({ error: err.message });
-      });
-    });
-    return true;
+    ...
   }
+  */
 
   // --- Auto-Apply Queue Logic ---
   if (request.action === 'start_queue') {
@@ -84,13 +84,73 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   } else if (request.action === 'stop_queue') {
     stopAutoApplyQueue();
     sendResponse({ status: 'stopped' });
-  } else if (request.action === 'next_job') {
+  } else if (request.action === 'next_job' || request.action === 'advance_queue') {
     advanceQueue();
     sendResponse({ status: 'advancing' });
+  } else if (request.action === 'log_fill') {
+    logApplicationFill(request.data);
+    sendResponse({ status: 'logged' });
+  } else if (request.action === 'log_submission') {
+    logApplicationSubmission(request.url);
+    sendResponse({ status: 'updated' });
+    // AI Cover Letter Handler Removed
+    // } else if (request.action === 'generate_cover_letter') {
+    //   ...
+    // }
+  } else if (request.action === 'check_sidepanel_status') {
+    const windowId = sender.tab?.windowId;
+    sendResponse({ isOpen: windowId ? openSidePanelWindows.has(windowId) : false });
   } else if (request.action === 'ping') {
     sendResponse({ status: 'pong' });
   }
 });
+
+function logApplicationFill(data) {
+  chrome.storage.local.get(['pendingSubmissions'], (result) => {
+    let pending = result.pendingSubmissions || {};
+    try {
+      const hostname = new URL(data.url).hostname;
+      pending[hostname] = { ...data, date: new Date().toISOString() };
+      chrome.storage.local.set({ pendingSubmissions: pending });
+    } catch (e) {
+      console.error("AutoFill: Error parsing URL for pending submission:", e);
+    }
+  });
+}
+
+function logApplicationSubmission(url) {
+  const hostname = new URL(url).hostname;
+  chrome.storage.local.get(['applicationHistory', 'pendingSubmissions'], (result) => {
+    let history = result.applicationHistory || [];
+    let pending = result.pendingSubmissions || {};
+
+    if (pending[hostname]) {
+      const data = pending[hostname];
+
+      // Prevent duplicate submissions for the same job in a short window
+      const oneMinuteAgo = Date.now() - 60 * 1000;
+      const isDuplicate = history.some(item =>
+        item.url === data.url &&
+        new Date(item.date).getTime() > oneMinuteAgo
+      );
+
+      if (!isDuplicate) {
+        history.push({
+          ...data,
+          status: 'submitted',
+          date: new Date().toISOString()
+        });
+
+        if (history.length > 50) history = history.slice(-50);
+        chrome.storage.local.set({ applicationHistory: history });
+      }
+
+      // Clear pending for this host
+      delete pending[hostname];
+      chrome.storage.local.set({ pendingSubmissions: pending });
+    }
+  });
+}
 
 // --- Auto-Apply State & Functions ---
 let jobQueue = [];
@@ -122,7 +182,6 @@ function startAutoApplyQueue(jobs) {
     jobQueue: jobQueue,
     lastSubmittedUrl: null
   }, () => {
-    // console.log("Queue successfully saved to storage. Total jobs:", jobQueue.length);
     broadcastQueueStatus();
     openCurrentJob();
   });
@@ -134,7 +193,6 @@ chrome.storage.local.get(['autoRunActive', 'currentJobIndex', 'jobQueue'], (resu
     autoRunActive = true;
     jobQueue = result.jobQueue;
     currentIndex = result.currentJobIndex || 0;
-    // console.log("Resuming queue from storage at index", currentIndex);
   }
 });
 
@@ -230,26 +288,4 @@ function broadcastQueueStatus(overrideStatus = null) {
   }
 }
 
-async function callGemini(prompt, apiKey) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      contents: [{
-        parts: [{ text: prompt }]
-      }]
-    })
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.error?.message || 'Gemini API call failed');
-  }
-
-  const data = await response.json();
-  return data.candidates[0].content.parts[0].text;
-}
+// --- AI Generation Functions Removed ---

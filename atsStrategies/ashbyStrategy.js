@@ -48,6 +48,17 @@ class AshbyStrategy extends GenericStrategy {
             };
         }
 
+        // 5. General Cultural / Notice Period
+        if (labelTxt.includes("notice period")) {
+            return { value: identity.notice_period || "Immediate", confidence: 95, fieldKey: "identity.notice_period" };
+        }
+        if (labelTxt.includes("salary expectations") || labelTxt.includes("compensation")) {
+            return { value: identity.salary_expectation || "Competitive / Negotiable", confidence: 90, fieldKey: "identity.expected_salary" };
+        }
+        if (labelTxt.includes("why are you interested") || labelTxt.includes("why this role")) {
+            return { value: data?.summary?.short || "I am drawn to this role because of the innovative work being done and my desire to contribute to a high-impact team.", confidence: 85, fieldKey: "summary.motivation" };
+        }
+
         // Fallback to generic logic
         return super.findValueForInput(input, data);
     }

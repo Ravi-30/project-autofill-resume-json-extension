@@ -75,7 +75,7 @@ class ResumeProcessor {
             return foundKey ? obj[foundKey] : "";
         };
 
-        const preferredName = basics.preferredName || basics.nickname || findByPattern(basics, ["preferred name", "nickname"]) || "";
+        const preferredName = ""; // User requested to NOT fill preferred name
 
         const identity = {
             first_name: firstName,
@@ -254,6 +254,37 @@ class ResumeProcessor {
             }
         };
 
+    }
+
+    /**
+     * Prunes normalized resume data to remove internal maps and noise for AI prompts.
+     */
+    static pruneForAi(normalizedData) {
+        if (!normalizedData) return {};
+        const pruned = JSON.parse(JSON.stringify(normalizedData));
+        if (pruned.reverse_maps) delete pruned.reverse_maps;
+        if (pruned.skills && pruned.skills.skill_frequency) delete pruned.skills.skill_frequency;
+        if (pruned.skills && pruned.skills.skill_categories) delete pruned.skills.skill_categories;
+        if (pruned.employment && pruned.employment.roles_by_year) delete pruned.employment.roles_by_year;
+        if (pruned.employment && pruned.employment.history) {
+            pruned.employment.history = pruned.employment.history.map(job => ({
+                company: job.name || job.company,
+                title: job.position || job.title,
+                startDate: job.startDate,
+                endDate: job.endDate || "Present",
+                description: job.summary || job.description
+            }));
+        }
+        if (pruned.education) {
+            pruned.education = pruned.education.map(edu => ({
+                institution: edu.institution,
+                degree: edu.studyType || edu.degree,
+                area: edu.area || edu.major,
+                startDate: edu.startDate,
+                endDate: edu.endDate
+            }));
+        }
+        return pruned;
     }
 }
 

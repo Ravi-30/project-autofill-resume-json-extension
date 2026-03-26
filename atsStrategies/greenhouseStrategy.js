@@ -6,53 +6,51 @@ class GreenhouseStrategy extends GenericStrategy {
     }
 
     async execute(normalizedData, aiEnabled, resumeFile = null) {
-        // Allow re-execution for auto-apply queue (check if this is a new page load)
-        if (this.executed && window.location.href === this.lastExecutedUrl) {
-            // console.log("GreenhouseStrategy already executed on this URL. Skipping...");
-            return;
-        }
-
         if (!normalizedData) {
             console.error("No resume data provided.");
             return;
         }
 
-        this.executed = true;
         this.aiEnabled = aiEnabled; // Store for inherited methods
-        this.lastExecutedUrl = window.location.href;
 
         // Check if this is a Greenhouse form by looking for key indicators
-        // New Greenhouse boards (job-boards.greenhouse.io) often render late in SPAs
         let hasGreenhouseForm = !!document.querySelector('[id*="application-form"], [id*="job-application"], [class*="greenhouse"], form[action*="greenhouse.io"]');
-        let inputFields = document.querySelectorAll('input, textarea, select');
+        let inputFields = document.querySelectorAll('input:not([type="hidden"]), textarea, select');
 
         if (!hasGreenhouseForm && inputFields.length === 0) {
-            // console.log("GH: Form not found immediately. Waiting...");
             const formFound = await this._waitForForm();
             if (formFound) {
                 hasGreenhouseForm = true;
                 inputFields = document.querySelectorAll('input, textarea, select');
-            } else {
-                console.warn("GreenhouseStrategy: No form elements detected on this page - might not be a job application page");
             }
         }
 
-        // Run base fill first (handles text inputs, textareas, native selects)
-        // console.log("✓ Starting base fill (GenericStrategy)...");
+        // Execution Guard: If we already filled a form on this EXACT URL, skip.
+        // We only trigger this guard if we actually found fields to fill.
+        if (this.executed && window.location.href === this.lastExecutedUrl && inputFields.length > 0) {
+            return;
+        }
+
+        // Logic flow:
+        // 1. Run super.execute to handle "Apply" button clicking AND generic field filling
         await super.execute(normalizedData, aiEnabled, resumeFile);
 
-        // Then handle Greenhouse-specific custom components
-        // Slight delay to let custom components initialize after base fill
-        await this.sleep(400);
+        // 2. Refresh input detection after super.execute (in case "Apply" was clicked or form appeared)
+        inputFields = document.querySelectorAll('input:not([type="hidden"]), textarea, select');
 
-        // console.log("✓ Filling Greenhouse education dropdowns...");
-        await this._fillGreenhouseEducation(normalizedData);
-        // console.log("✓ Filling country dropdown...");
-        await this._fillCountryDropdown(normalizedData);
-        // console.log("✓ Filling other custom selects (demographics)...");
-        await this._fillAllCustomSelects(normalizedData);
+        if (inputFields.length > 0) {
+            this.executed = true;
+            this.lastExecutedUrl = window.location.href;
 
-        // console.log("✓ Greenhouse AutoFill complete.");
+            await this.sleep(400);
+
+            // 3. Run Greenhouse-specific refinements (Select2, Remix, etc.)
+            await this._fillGreenhouseEducation(normalizedData);
+            await this._fillCountryDropdown(normalizedData);
+            await this._fillAllCustomSelects(normalizedData);
+        } else {
+            // If still no fields, don't set this.executed = true so we can try again on next mutation
+        }
     }
 
     async _waitForForm() {
@@ -169,418 +167,87 @@ class GreenhouseStrategy extends GenericStrategy {
     }
 
     async _selectRemixOption(input, value, normalize, normValue) {
-        // console.log(`GH: Remix Select - Attempting to select "${value}" for ${input.id}`);
+        if (!input || !value) return;
 
-        // 1. Click to focus/open
-        input.click();
-        input.focus();
-        input.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        try {
+            // Click to open
+            input.click();
+            await this.sleep(300);
 
-        // 2. Wait for options to appear
-        await this.sleep(300);
+            // Search for options in the popover
+            const options = Array.from(document.querySelectorAll('[role="option"], .select__option'));
+            let bestOption = null;
+            let highestConf = 0;
 
-        // Remix/React-Select often injects the list in a portal or nearby div
-        // Look for items with classes like "select__option" or "remix-css" or "results"
-        const options = Array.from(document.querySelectorAll(
-            '[class*="select__option"], [class*="option"], [id*="react-select"], .remix-css-container div'
-        )).filter(el => el.innerText && el.innerText.trim().length > 0);
+            options.forEach(opt => {
+                const optText = (opt.innerText || "").toLowerCase();
+                const normOpt = normalize(optText);
+                
+                if (normOpt === normValue) {
+                    bestOption = opt;
+                    highestConf = 100;
+                } else if (normOpt.includes(normValue) || normValue.includes(normOpt)) {
+                    if (highestConf < 80) {
+                        bestOption = opt;
+                        highestConf = 80;
+                    }
+                }
+            });
 
-        if (options.length === 0) {
-            // console.warn("GH: No Remix options found in DOM after click.");
-            return;
-        }
-
-        let bestOpt = null;
-        let bestScore = 0;
-
-        for (const opt of options) {
-            const optNorm = normalize(opt.innerText || "");
-            let score = 0;
-            if (optNorm === normValue) score = 100;
-            else if (optNorm.includes(normValue) || normValue.includes(optNorm)) score = 80;
-
-            if (score > bestScore) {
-                bestScore = score;
-                bestOpt = opt;
+            if (bestOption) {
+                bestOption.click();
+                await this.sleep(100);
+            } else {
+                // Fallback: just try to type in the input
+                this.setInputValue(input, value);
+                // Press Enter to confirm if it's a searchable combobox
+                input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
             }
-        }
-
-        if (bestOpt && bestScore >= 60) {
-            // console.log(`GH: Clicking Remix option: "${bestOpt.innerText}" (score ${bestScore})`);
-            bestOpt.click();
-            bestOpt.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-            bestOpt.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-        } else {
-            // console.warn(`GH: No Remix match for "${value}" (best ${bestScore})`);
-            // Try typing it if it's a searchable combobox?
-            input.value = value;
-            this._triggerReactChange(input, value);
+        } catch (e) {
+            // SILENT
         }
     }
 
-    /**
-     * Fills a Select2 dropdown within a given block by keyword matching.
-     *
-     * Greenhouse Select2 pattern:
-     *   <select id="education_0_school" class="select2-hidden-accessible" ...>
-     *     <option>Master's Degree</option>...
-     *   </select>
-     *   <span class="select2 select2-container">
-     *     <span class="select2-selection">...</span>
-     *   </span>
-     *
-     * Strategy:
-     *   1. If jQuery + Select2 are available → use $(select).val(val).trigger('change')
-     *   2. Otherwise → click the Select2 trigger, wait, then click the matching option
-     *   3. Final fallback → setSelectValue on the raw <select>
-     */
     async _fillSelect2InBlock(block, keyFragments, value) {
         if (!value) return;
+        const selects = Array.from((block === document ? document : block).querySelectorAll('select.select2-hidden-accessible, select[data-s2]'));
 
-        const normalize = s => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-        const normValue = normalize(value);
+        for (const select of selects) {
+            const container = select.closest('.field') || select.parentElement;
+            const labelTxt = (container?.innerText || "").toLowerCase();
+            const combined = (select.id || "") + " " + (select.name || "") + " " + labelTxt;
 
-        // Find all <select> elements in this block
-        const selects = Array.from((block === document ? document : block).querySelectorAll('select'));
-        if (selects.length === 0) return; // Modern GH boards use <input>, handled by base GenericStrategy
-
-        for (const sel of selects) {
-            const combined = normalize(
-                (sel.id || "") + " " +
-                (sel.name || "") + " " +
-                (this.getLabelText(sel) || "") + " " +
-                (sel.getAttribute('aria-label') || "")
-            );
-
-            if (!keyFragments.some(k => combined.includes(normalize(k)))) continue;
-
-            // console.log(`GH: Found select for [${keyFragments}]: id="${sel.id}", options=${sel.options.length}`);
-
-            // --- Strategy 1: jQuery + Select2 API ---
-            if (typeof window.$ !== 'undefined' && typeof window.$.fn.select2 !== 'undefined') {
-                try {
-                    // Find the best matching option
-                    const bestIdx = this._findBestOption(sel, value, normalize, normValue);
-                    if (bestIdx !== null) {
-                        const bestValueString = sel.options[bestIdx].value;
-                        window.$(sel).val(bestValueString).trigger('change');
-                        // console.log(`GH: jQuery Select2 set [${keyFragments}] = "${bestValueString}"`);
-                        return;
-                    }
-                } catch (e) {
-                    console.warn("GH: jQuery Select2 approach failed:", e);
-                }
+            if (keyFragments.some(k => combined.includes(k.toLowerCase()))) {
+                // Use the refactored fuzzy matching from GenericStrategy
+                this.setSelectValue(select, value);
+                return;
             }
-
-            // --- Strategy 2: Click the Select2 trigger span ---
-            // The Select2 container is typically the next sibling of the hidden select
-            const container = sel.nextElementSibling?.classList?.contains('select2')
-                ? sel.nextElementSibling
-                : document.querySelector(`.select2-container[data-select2-id="${sel.getAttribute('data-select2-id')}"]`)
-                || document.querySelector(`.select2-container[aria-controls*="${sel.id}"]`);
-
-            if (container) {
-                const trigger = container.querySelector('.select2-selection');
-                if (trigger) {
-                    // Open dropdown
-                    trigger.click();
-                    trigger.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-
-                    await new Promise(resolve => {
-                        setTimeout(() => {
-                            // Find options in the opened dropdown
-                            const opts = Array.from(document.querySelectorAll(
-                                '.select2-results__option, .select2-results li'
-                            ));
-
-                            let bestOpt = null;
-                            let bestScore = 0;
-                            for (const opt of opts) {
-                                const optNorm = normalize(opt.innerText || "");
-                                let score = 0;
-                                if (optNorm === normValue) score = 100;
-                                else if (optNorm.startsWith(normValue) || normValue.startsWith(optNorm)) score = 80;
-                                else if (optNorm.includes(normValue) || normValue.includes(optNorm)) score = 60;
-                                if (score > bestScore) { bestScore = score; bestOpt = opt; }
-                            }
-
-                            if (bestOpt && bestScore >= 60) {
-                                bestOpt.click();
-                                // console.log(`GH: Select2 click-select [${keyFragments}] = "${bestOpt.innerText}"`);
-                            } else {
-                                console.warn(`GH: No matching option for "${value}" in Select2 (best ${bestScore})`);
-                                document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-                            }
-                            resolve();
-                        }, 300);
-                    });
-                    return;
-                }
-            }
-
-            // --- Strategy 3: Raw <select> fallback ---
-            const bestIdx = this._findBestOption(sel, value, normalize, normValue);
-            if (bestIdx !== null) {
-                sel.selectedIndex = parseInt(bestIdx);
-                this._triggerReactChange(sel, sel.value);
-                // console.log(`GH: Raw select fallback [${keyFragments}] = idx ${bestIdx}`);
-            }
-            return;
         }
-
-        // console.log(`GH: No Select2 found for [${keyFragments}] with value "${value}" (may be a modern text input instead)`);
     }
-
-    /**
-     * Finds the best matching option INDEX in a <select> element.
-     * Returns the integer index of the best match.
-     * Returns null if no match found.
-     */
-    _findBestOption(select, value, normalize, normValue) {
-        let bestIdx = -1;
-        let bestScore = 0;
-
-        const usVariations = this.getUSVariations();
-        const isUS = usVariations.includes(normValue);
-
-        for (let i = 0; i < select.options.length; i++) {
-            const opt = select.options[i];
-            const optText = normalize(opt.text || "");
-            const optVal = normalize(opt.value || "");
-            let score = 0;
-
-            if (optText === normValue || optVal === normValue) score = 100;
-            else if (isUS && (usVariations.includes(optText) || usVariations.includes(optVal))) score = 95;
-            else if (optText.startsWith(normValue) || normValue.startsWith(optText)) score = 80;
-            else if (optText.includes(normValue) || normValue.includes(optText)) score = 60;
-
-            if (score > bestScore) { bestScore = score; bestIdx = i; }
-        }
-
-        if (bestIdx !== -1 && bestScore >= 60) {
-            return bestIdx; // Return integer index
-        }
-        return null;
-    }
-
-    /* ===============================
-       COUNTRY DROPDOWN
-       Greenhouse shows "Country" as a native <select> beside the phone field.
-       The current issue was the value "United States +1" not matching any option.
-       With the resume.json fix to "United States" this should now work via the
-       generic strategy, but we add explicit Greenhouse handling as insurance.
-    ================================== */
 
     async _fillCountryDropdown(normalizedData) {
         const country = normalizedData?.contact?.country || "";
         if (!country) return;
-
-        const normalize = s => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-        const normCountry = normalize(country);
-
-        // Find country selects
-        const selects = Array.from(document.querySelectorAll('select')).filter(sel => {
-            const combined = normalize(
-                (sel.id || "") + " " + (sel.name || "") + " " + (this.getLabelText(sel) || "")
-            );
-            return combined.includes("country");
-        });
-
-        for (const sel of selects) {
-            const bestIdx = this._findBestOption(sel, country, normalize, normCountry);
-            if (bestIdx !== null) {
-                const bestValue = sel.options[bestIdx].value;
-                // Try jQuery + Select2 first
-                if (typeof window.$ !== 'undefined' && typeof window.$.fn.select2 !== 'undefined') {
-                    try {
-                        window.$(sel).val(bestValue).trigger('change');
-                        // console.log(`GH: Country set via jQuery Select2 = "${bestValue}"`);
-                        return;
-                    } catch (e) { /* fall through */ }
-                }
-
-                // Try Remix approach if legacy select2 failed
-                const remixInput = document.querySelector(`input[aria-labelledby*="${sel.id}"], input#country`);
-                if (remixInput) {
-                    await this._selectRemixOption(remixInput, country, normalize, normCountry);
-                    return;
-                }
-
-                // Raw fallback
-                sel.value = bestValue;
-                this._triggerReactChange(sel, bestValue);
-                // console.log(`GH: Country set via raw select = "${bestValue}"`);
-                return;
-            }
+        
+        // Greenhouse uses a standard select for country usually, but sometimes Select2
+        await this._fillSelect2InBlock(document, ['country'], country);
+        
+        const countrySelect = document.querySelector('select[id*="country"], select[name*="country"]');
+        if (countrySelect) {
+            this.setSelectValue(countrySelect, country);
         }
-
-        // console.log(`GH: No country dropdown found for "${country}" (may be a generic field or absent)`);
     }
 
-    /* ===============================
-       OTHER CUSTOM SELECTS (Demographics, etc.)
-    ================================== */
     async _fillAllCustomSelects(normalizedData) {
-        // 1. Handle Legacy Select2 hidden selects
-        const legacySelects = Array.from(document.querySelectorAll('select.select2-hidden-accessible, select[aria-hidden="true"]'));
-        for (const sel of legacySelects) {
-            if (sel.value && sel.value.trim() !== '') continue;
-
-            const match = this.findValueForInput(sel, normalizedData);
-            if (match && match.confidence >= this.CONFIDENCE_THRESHOLD && match.value) {
-                const normalize = s => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-                const normVal = normalize(match.value);
-                const bestIdx = this._findBestOption(sel, match.value, normalize, normVal);
-
-                if (bestIdx !== null) {
-                    const bestValueString = sel.options[bestIdx].value;
-                    if (typeof window.$ !== 'undefined' && typeof window.$.fn.select2 !== 'undefined') {
-                        try {
-                            window.$(sel).val(bestValueString).trigger('change');
-                            continue;
-                        } catch (e) { /* fall through */ }
-                    }
-                    sel.selectedIndex = parseInt(bestIdx);
-                    this._triggerReactChange(sel, bestValueString);
-                }
+        // Find all Select2 and custom selects that haven't been filled
+        const selects = document.querySelectorAll('select.select2-hidden-accessible');
+        selects.forEach(select => {
+            if (select.value && select.value !== "" && select.value !== "0") return;
+            const match = this.findValueForInput(select, normalizedData);
+            if (match && match.value) {
+                this.setSelectValue(select, match.value);
             }
-        }
-
-        // 2. Handle modern Remix comboboxes
-        const remixInputs = Array.from(document.querySelectorAll('input[role="combobox"], input.select__input'));
-        for (const input of remixInputs) {
-            if (input.value && input.value.trim() !== '') continue;
-
-            const match = this.findValueForInput(input, normalizedData);
-            if (match && match.confidence >= this.CONFIDENCE_THRESHOLD && match.value) {
-                const normalize = s => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-                await this._selectRemixOption(input, match.value, normalize, normalize(match.value));
-            }
-        }
-    }
-
-    /**
-     * Properly triggers React's change detection via the native setter trick.
-     */
-    _triggerReactChange(input, value) {
-        const proto = input.tagName === 'SELECT'
-            ? window.HTMLSelectElement.prototype
-            : input.tagName === 'TEXTAREA'
-                ? window.HTMLTextAreaElement.prototype
-                : window.HTMLInputElement.prototype;
-
-        const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
-        if (nativeSetter) {
-            nativeSetter.call(input, value);
-        } else {
-            input.value = value;
-        }
-
-        const tracker = input._valueTracker;
-        if (tracker) tracker.setValue('');
-
-        ['input', 'change', 'blur'].forEach(ev => {
-            input.dispatchEvent(new Event(ev, { bubbles: true, composed: true }));
         });
-    }
-
-    /* ===============================
-       OVERRIDDEN MATCHING LOGIC
-    ================================== */
-
-    findValueForInput(input, normalizedData) {
-        let match = this.findGreenhouseSpecificMatch(input, normalizedData);
-        if (!match || !match.value) {
-            match = super.findValueForInput(input, normalizedData);
-        }
-        return match;
-    }
-
-    findGreenhouseSpecificMatch(input, data) {
-        const id = (input.id || "").toLowerCase();
-        const name = (input.name || "").toLowerCase();
-        let labelTxt = "";
-
-        if (input.id) {
-            const label = document.querySelector(`label[for="${input.id}"]`);
-            if (label) labelTxt = label.innerText.toLowerCase();
-        }
-
-        if (!labelTxt) {
-            const parent = input.closest("div") || input.parentElement;
-            labelTxt = parent?.innerText?.toLowerCase() || "";
-        }
-
-        const identity = data?.identity || {};
-        const contact = data?.contact || {};
-        const summary = data?.summary || {};
-
-        if (labelTxt.includes("how did you hear") || labelTxt.includes("how did you find out") || id.includes("how_did_you_hear"))
-            return { value: "LinkedIn", confidence: 100, fieldKey: "summary.source" };
-
-        if (labelTxt.includes("referral") || id.includes("referral"))
-            return { value: " ", confidence: 100, fieldKey: "referral_blank" };
-
-        if (id.includes("first_name") || name.includes("first_name"))
-            return { value: identity.first_name, confidence: 100, fieldKey: "identity.first_name" };
-
-        if (id.includes("last_name") || name.includes("last_name"))
-            return { value: identity.last_name, confidence: 100, fieldKey: "identity.last_name" };
-
-        if (id.includes("preferred_name") || name.includes("preferred_name") || labelTxt.includes("preferred first name") || labelTxt.includes("nickname"))
-            return { value: identity.preferred_name, confidence: 100, fieldKey: "identity.preferred_name" };
-
-        if (id.includes("email") || name.includes("email"))
-            return { value: contact.email, confidence: 100, fieldKey: "contact.email" };
-
-        if (id.includes("phone") || name.includes("phone"))
-            return { value: contact.phone, confidence: 100, fieldKey: "contact.phone" };
-
-        if (labelTxt.includes("linkedin") || id.includes("linkedin"))
-            return { value: contact.linkedin, confidence: 100, fieldKey: "contact.linkedin" };
-
-        if (labelTxt.includes("github") || labelTxt.includes("portfolio") || labelTxt.includes("website")) {
-            const fieldKey = labelTxt.includes("github") ? "contact.github" : "contact.portfolio";
-            const portfolio = contact.portfolio || contact.github;
-            return { value: portfolio, confidence: 95, fieldKey };
-        }
-
-        // Custom Questions / Citizenship
-        if (labelTxt.includes("sponsorship") || labelTxt.includes("visa status") || labelTxt.includes("require employment visa") || labelTxt.includes("commence") || labelTxt.includes("sponsor")) {
-            return { value: identity.sponsorship_required || "No", confidence: 90, fieldKey: "identity.sponsorship_required" };
-        }
-
-        if (labelTxt.includes("work authorization") || labelTxt.includes("authorized to work")) {
-            return { value: identity.authorized_to_work || "Yes", confidence: 90, fieldKey: "identity.authorized_to_work" };
-        }
-
-        // Explicit Demographics
-        if (labelTxt.includes("race") || labelTxt.includes("ethnic")) {
-            return { value: identity.ethnicity, confidence: 90, fieldKey: "identity.ethnicity" };
-        }
-        if (labelTxt.includes("sexual orientation")) {
-            return { value: identity.sexual_orientation, confidence: 90, fieldKey: "identity.sexual_orientation" };
-        }
-        if (labelTxt.includes("transgender")) {
-            return { value: identity.transgender_status, confidence: 90, fieldKey: "identity.transgender_status" };
-        }
-        if (labelTxt.includes("disability")) {
-            return { value: identity.disability_status, confidence: 90, fieldKey: "identity.disability_status" };
-        }
-
-        if (labelTxt.includes("claude") || labelTxt.includes("cursor") || labelTxt.includes("ai tool")) {
-            return { value: summary.ai_tool_experience, confidence: 90, fieldKey: "summary.ai_tool_experience" };
-        }
-
-        if (labelTxt.includes("restrict your ability to work") || labelTxt.includes("contractual obligations") || labelTxt.includes("non-compete")) {
-            return { value: "No", confidence: 100, fieldKey: "custom.non_compete" };
-        }
-
-        if (labelTxt.includes("working in person") || labelTxt.includes("san francisco or new york office")) {
-            return { value: "Yes", confidence: 100, fieldKey: "custom.in_office" };
-        }
-
-        return null;
     }
 }
 
@@ -591,10 +258,12 @@ class GreenhouseStrategy extends GenericStrategy {
 if (typeof ATSStrategyRegistry !== "undefined") {
     ATSStrategyRegistry.register(
         (url, doc) => url.includes("greenhouse.io") ||
+            url.includes("gh_jid=") || 
             !!doc.querySelector('meta[content*="greenhouse"]') ||
             !!doc.querySelector('.grnhse-wrapper') ||
             !!doc.querySelector('#grnhse_app') ||
-            !!doc.querySelector('.application--form'),
+            !!doc.querySelector('.application--form') ||
+            !!doc.querySelector('form[action*="greenhouse.io"]'),
         GreenhouseStrategy
     );
 }

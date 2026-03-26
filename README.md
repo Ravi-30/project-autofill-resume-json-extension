@@ -6,18 +6,23 @@ A powerful, intelligent Chrome Extension designed to fully automate the tedious 
 
 ## ✨ Key Features
 
-- **⚡ 100% Automatic Execution**: No "Fill" button required. The extension detects supported application forms instantly via DOM monitors and MutationObservers, populating them as they render.
-- **🎯 Intelligent Field Mapping**: Uses advanced matching algorithms (keywords, context, HTML attributes, and regex) to achieve high-accuracy data entry.
-- **🖥️ Persistent Side Panel UI**: Monitor progress, review matches, and edit values in a dedicated Chrome Side Panel that won't disappear when you switch tabs.
-- **📊 Interactive Fill Summary**: View a real-time table of all detected and filled fields. If a match needs adjustment, edit it in the side panel and click **Apply Edits** to update the webpage instantly.
-- **🧠 Custom ATS Overrides**: Store persistent answers for common compliance, demographic, and site-specific questions (e.g., "Will you now or in the future require sponsorship?").
-- **🛡️ Privacy First**: Your resume data is stored locally in your browser using Chrome's encrypted storage API. No data is sent to external servers unless you enable AI features.
+- **🤖 AI-Powered Fallback**: Integrated Gemini 1.5 Flash to automatically solve required fields or open-ended questions that don't have a direct match in your resume JSON.
+- **✉️ AI Cover Letter Generator**: Generate tailored cover letters instantly based on the job description and your resume. Copy them or auto-fill them into the application form with one click.
+- **📊 Application History**: Automatically tracks every form you fill and submit, complete with timestamps, company names, and job roles.
+- **🔒 Smart User-Lock System**: Your manual corrections are sacred. The extension detects when you physically type into a field and "locks" it, ensuring subsequent auto-fill passes never overwrite your manual edits.
+- **🔘 Floating Control Widget**: A premium, draggable overlay that appears on every fill (manual or queue), giving you instant access to **Fill**, **Letter 🪄**, **Next**, and **Stop/Close** controls directly on the page.
+- **⚡ 100% Automatic Execution**: No "Fill" button required. The extension detects supported forms instantly and populates them as they render.
+- **🧪 Robust Data Sanitization**: The resume uploader now automatically strips illegal control characters from your JSON files, ensuring smooth imports from any source.
 
 ---
 
 ## 🏗️ Supported ATS Platforms
 
-w
+- **Greenhouse**
+- **Lever**
+- **Workday** (In progress/Stable)
+- **Rippling**
+- **Generic HTML Forms** (Heuristic matching)
 
 ---
 
@@ -40,8 +45,8 @@ The extension uses an enhanced version of the [JSON Resume](https://jsonresume.o
 
 ### 2. Upload and Sync
 - Click the Extension icon 🧩 in your browser toolbar to open the **Side Panel**.
-- Click **Upload resume.json** and select your file.
-- The extension will normalize and cache your data for instant use.
+- (Optional) Enter your **Gemini API Key** in the settings section to enable AI-powered field solving.
+- Click **Upload resume.json** and select your file. The extension will sanitize the text and cache it locally.
 
 ### 3. Start Applying
 - Navigate to any supported job application page (e.g., a Greenhouse or Lever link).
@@ -86,10 +91,10 @@ The script ensures that:
 
 ## 🔮 Roadmap
 
-- [ ] **AI Integration**: Experimental support for local LLMs (Ollama) or OpenAI to handle open-ended short-form questions.
 - [ ] **Cover Letter Generation**: One-click custom cover letters based on the Job Description.
 - [ ] **Multi-Profile Support**: Switch between tailored resumes for different roles (e.g., "Fullstack" vs "DevOps").
-- [ ] **Job Tracker Integration**: Automatically log applications to a spreadsheet or dashboard.
+- [ ] **Job Tracker 2.0**: Automatically log applications to a localized dashboard with status tracking.
+- [ ] **Mobile Support**: Integration with Kiwi/Kiwi-Next browsers for automated mobile applications.
 
 ---
 
@@ -100,6 +105,30 @@ Contributions are welcome! If you encounter an unsupported job board or a bug:
 2. Create a new ATS strategy in `atsStrategies/`.
 3. Register it in `strategyRegistry.js`.
 4. Submit a Pull Request.
+
+---
+
+---
+
+## 🔐 Permissions Justification
+
+To provide a seamless experience across the vast landscape of Applicant Tracking Systems (ATS), this extension requires the following permissions:
+
+- **`activeTab`**: Used only to interact with the job application form you are currently viewing. We do not access your data on other tabs.
+- **`storage`**: Used to securely store your resume data locally on your device for autofilling.
+- **`host_permissions` (`*://*/*`)**: Since job applications can be hosted on any domain (including company-specific subdomains), this permission is necessary to identify and fill forms regardless of where they are hosted.
+- **`sidePanel`**: Provides a convenient interface for managing your resume data and triggering the autofill without obscuring the application form.
+
+---
+
+## 👥 Authors
+
+- Sampath Velupula - *Lead Developer*
+- Ravi Kumar Rayapalli - *ATS Strategy Specialist*
+- Jafar vali - *Developer*
+- Ramana gangarao - *Frontend Engineer*
+- Bavish Kangari - *QA & Testing*
+- jatin Thakur - *UX Designer*
 
 ---
 
