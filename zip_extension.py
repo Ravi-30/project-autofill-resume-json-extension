@@ -16,7 +16,9 @@ def create_zip():
         "sidepanel.js",
         "styles.css",
         "atsStrategies",
-        "icons"
+        "icons",
+        "README.md",
+        "PRIVACY_POLICY.md"
     ]
     
     print(f"Creating {zip_name}...")
