@@ -2,6 +2,264 @@
  * Utility to process and normalize JSON Resume data into a flat, searchable index.
  */
 class ResumeProcessor {
+    static isPlainObject(value) {
+        return !!value && typeof value === 'object' && !Array.isArray(value);
+    }
+
+    static asArray(value) {
+        if (Array.isArray(value)) return value;
+        if (value === undefined || value === null || value === '') return [];
+        return [value];
+    }
+
+    static firstNonEmpty(...values) {
+        for (const value of values) {
+            if (value === undefined || value === null) continue;
+            if (typeof value === 'string' && value.trim()) return value.trim();
+            if (Array.isArray(value) && value.length > 0) return value;
+            if (this.isPlainObject(value) && Object.keys(value).length > 0) return value;
+            if (typeof value === 'number' || typeof value === 'boolean') return value;
+        }
+        return "";
+    }
+
+    static findValueByAliases(obj, aliases = []) {
+        if (!this.isPlainObject(obj)) return "";
+        const normalizedAliases = aliases.map(alias => this.normalizeText(alias));
+        for (const [key, value] of Object.entries(obj)) {
+            const normalizedKey = this.normalizeText(key);
+            if (normalizedAliases.some(alias => normalizedKey === alias || normalizedKey.includes(alias))) {
+                return value;
+            }
+        }
+        return "";
+    }
+
+    static findSection(source, aliases = []) {
+        if (!this.isPlainObject(source)) return null;
+        const direct = this.findValueByAliases(source, aliases);
+        if (direct) return direct;
+
+        for (const value of Object.values(source)) {
+            if (!this.isPlainObject(value)) continue;
+            const nested = this.findValueByAliases(value, aliases);
+            if (nested) return nested;
+        }
+
+        return null;
+    }
+
+    static joinTextParts(parts = []) {
+        return parts
+            .filter(part => typeof part === 'string' && part.trim())
+            .map(part => part.trim())
+            .join(', ');
+    }
+
+    static normalizeProfiles(rawProfiles, source) {
+        const profiles = [];
+        const pushProfile = (network, url) => {
+            if (!url) return;
+            profiles.push({
+                network: network || "profile",
+                url: typeof url === 'string' ? url.trim() : url
+            });
+        };
+
+        this.asArray(rawProfiles).forEach(profile => {
+            if (typeof profile === 'string') {
+                pushProfile("profile", profile);
+                return;
+            }
+
+            if (!this.isPlainObject(profile)) return;
+            pushProfile(
+                this.firstNonEmpty(profile.network, profile.platform, profile.type, profile.label, profile.name),
+                this.firstNonEmpty(profile.url, profile.link, profile.href, profile.username)
+            );
+        });
+
+        if (this.isPlainObject(source)) {
+            pushProfile("linkedin", this.firstNonEmpty(source.linkedin, source.linkedinUrl, source.linkedIn));
+            pushProfile("github", this.firstNonEmpty(source.github, source.githubUrl));
+            pushProfile("portfolio", this.firstNonEmpty(source.portfolio, source.website, source.url));
+        }
+
+        return profiles.filter(profile => profile.url);
+    }
+
+    static normalizeSkills(rawSkills) {
+        if (!rawSkills) return [];
+
+        const addKeywords = (bucket, values) => {
+            this.asArray(values).forEach(value => {
+                if (typeof value === 'string' && value.trim()) {
+                    bucket.push(value.trim());
+                }
+            });
+        };
+
+        const skills = [];
+        this.asArray(rawSkills).forEach(entry => {
+            if (typeof entry === 'string') {
+                skills.push({ name: "General", keywords: [entry.trim()] });
+                return;
+            }
+
+            if (!this.isPlainObject(entry)) return;
+
+            const name = this.firstNonEmpty(entry.name, entry.category, entry.group, entry.type, "General");
+            const keywords = [];
+            addKeywords(keywords, entry.keywords);
+            addKeywords(keywords, entry.skills);
+            addKeywords(keywords, entry.items);
+            addKeywords(keywords, entry.technologies);
+            addKeywords(keywords, entry.tools);
+
+            const fallbackValue = this.firstNonEmpty(entry.name, entry.skill);
+            if (keywords.length === 0 && typeof fallbackValue === 'string') {
+                keywords.push(fallbackValue);
+            }
+
+            skills.push({ name, keywords });
+        });
+
+        return skills.filter(skill => skill.keywords && skill.keywords.length > 0);
+    }
+
+    static normalizeWorkEntries(rawWork) {
+        return this.asArray(rawWork)
+            .filter(entry => this.isPlainObject(entry))
+            .map(job => ({
+                ...job,
+                name: this.firstNonEmpty(job.name, job.company, job.companyName, job.employer, job.organization),
+                position: this.firstNonEmpty(job.position, job.title, job.role, job.jobTitle, job.designation),
+                startDate: this.firstNonEmpty(job.startDate, job.start_date, job.from, job.dateStart),
+                endDate: this.firstNonEmpty(job.endDate, job.end_date, job.to, job.dateEnd, job.finishDate),
+                summary: this.firstNonEmpty(job.summary, job.description, job.responsibilities, job.highlights),
+                location: this.firstNonEmpty(job.location, job.city, job.region)
+            }))
+            .filter(job => job.name || job.position || job.summary);
+    }
+
+    static normalizeEducationEntries(rawEducation) {
+        return this.asArray(rawEducation)
+            .filter(entry => this.isPlainObject(entry))
+            .map(edu => ({
+                ...edu,
+                institution: this.firstNonEmpty(edu.institution, edu.school, edu.university, edu.college, edu.organization),
+                studyType: this.firstNonEmpty(edu.studyType, edu.degree, edu.degreeName, edu.qualification, edu.Discipline),
+                area: this.firstNonEmpty(edu.area, edu.major, edu.fieldOfStudy, edu.specialization, edu.department),
+                startDate: this.firstNonEmpty(edu.startDate, edu.start_date, edu.from, edu.dateStart),
+                endDate: this.firstNonEmpty(edu.endDate, edu.end_date, edu.to, edu.dateEnd, edu.graduationDate)
+            }))
+            .filter(edu => edu.institution || edu.studyType || edu.area);
+    }
+
+    static buildCanonicalResume(resumeData) {
+        if (!this.isPlainObject(resumeData)) return {};
+
+        const rawBasics = this.findSection(resumeData, [
+            "basics", "basic", "personal", "personal info", "personal information",
+            "profile", "contact", "candidate", "header"
+        ]) || {};
+
+        const workSection = this.findSection(resumeData, [
+            "work", "experience", "work experience", "employment", "employment history",
+            "professional experience", "positions", "career history"
+        ]);
+
+        const educationSection = this.findSection(resumeData, [
+            "education", "education history", "academics", "academic", "studies", "qualifications"
+        ]);
+
+        const skillsSection = this.findSection(resumeData, [
+            "skills", "skill set", "skillset", "technologies", "technical skills",
+            "core competencies", "expertise"
+        ]);
+
+        const basicsSource = this.isPlainObject(rawBasics) ? rawBasics : {};
+        const firstName = this.firstNonEmpty(
+            basicsSource.firstName,
+            basicsSource.first_name,
+            resumeData.firstName,
+            resumeData.first_name
+        );
+        const middleName = this.firstNonEmpty(
+            basicsSource.middleName,
+            basicsSource.middle_name,
+            resumeData.middleName,
+            resumeData.middle_name
+        );
+        const lastName = this.firstNonEmpty(
+            basicsSource.lastName,
+            basicsSource.last_name,
+            resumeData.lastName,
+            resumeData.last_name
+        );
+
+        const fullName = this.firstNonEmpty(
+            basicsSource.name,
+            basicsSource.fullName,
+            basicsSource.full_name,
+            resumeData.name,
+            resumeData.fullName,
+            this.joinTextParts([firstName, middleName, lastName]).replace(/,\s*/g, ' ')
+        );
+
+        const rawLocation = this.findSection(basicsSource, ["location", "address"]) ||
+            this.findSection(resumeData, ["location", "address"]) || {};
+
+        const location = this.isPlainObject(rawLocation) ? {
+            address: this.firstNonEmpty(rawLocation.address, rawLocation.street, rawLocation.line1),
+            city: this.firstNonEmpty(rawLocation.city, rawLocation.town),
+            region: this.firstNonEmpty(rawLocation.region, rawLocation.state, rawLocation.province),
+            postalCode: this.firstNonEmpty(rawLocation.postalCode, rawLocation.zip, rawLocation.zipCode, rawLocation.postcode),
+            countryCode: this.firstNonEmpty(rawLocation.countryCode, rawLocation.country, rawLocation.nation)
+        } : {};
+
+        const basics = {
+            ...basicsSource,
+            name: fullName,
+            email: this.firstNonEmpty(basicsSource.email, resumeData.email),
+            phone: this.firstNonEmpty(basicsSource.phone, basicsSource.phoneNumber, resumeData.phone, resumeData.phoneNumber),
+            url: this.firstNonEmpty(basicsSource.url, basicsSource.website, basicsSource.portfolio, resumeData.url, resumeData.website),
+            label: this.firstNonEmpty(basicsSource.label, basicsSource.headline, basicsSource.title, resumeData.label, resumeData.headline),
+            summary: this.firstNonEmpty(
+                basicsSource.summary,
+                basicsSource.objective,
+                basicsSource.profileSummary,
+                basicsSource.bio,
+                resumeData.summary,
+                resumeData.objective,
+                resumeData.profileSummary
+            ),
+            gender: this.firstNonEmpty(basicsSource.gender, resumeData.gender),
+            pronouns: this.firstNonEmpty(basicsSource.pronouns, resumeData.pronouns),
+            veteranStatus: this.firstNonEmpty(basicsSource.veteranStatus, basicsSource.veteran_status, resumeData.veteranStatus),
+            disabilityStatus: this.firstNonEmpty(basicsSource.disabilityStatus, basicsSource.disability_status, resumeData.disabilityStatus),
+            ethnicity: this.firstNonEmpty(basicsSource.ethnicity, basicsSource.race, resumeData.ethnicity),
+            hispanicLatino: this.firstNonEmpty(basicsSource.hispanicLatino, basicsSource.hispanic_latino, resumeData.hispanicLatino),
+            profiles: this.normalizeProfiles(
+                this.firstNonEmpty(basicsSource.profiles, basicsSource.links, basicsSource.social, basicsSource.websites, resumeData.profiles),
+                basicsSource
+            ),
+            location,
+            workAuthorization: this.isPlainObject(basicsSource.workAuthorization) ? basicsSource.workAuthorization : (this.isPlainObject(resumeData.workAuthorization) ? resumeData.workAuthorization : {}),
+            availability: this.isPlainObject(basicsSource.availability) ? basicsSource.availability : (this.isPlainObject(resumeData.availability) ? resumeData.availability : {}),
+            custom: this.isPlainObject(basicsSource.custom) ? basicsSource.custom : {},
+            experience: this.isPlainObject(basicsSource.experience) ? basicsSource.experience : {}
+        };
+
+        return {
+            ...resumeData,
+            basics,
+            work: this.normalizeWorkEntries(workSection || resumeData.work),
+            education: this.normalizeEducationEntries(educationSection || resumeData.education),
+            skills: this.normalizeSkills(skillsSection || resumeData.skills)
+        };
+    }
+
     /**
      * Text Normalization Utility
      * - Lowercases text
@@ -45,9 +303,11 @@ class ResumeProcessor {
     static normalize(resumeData) {
         if (!resumeData) return {};
 
-        const basics = resumeData.basics || {};
-        const work = resumeData.work || [];
-        const skills = resumeData.skills || [];
+        const canonicalResume = this.buildCanonicalResume(resumeData);
+
+        const basics = canonicalResume.basics || {};
+        const work = canonicalResume.work || [];
+        const skills = canonicalResume.skills || [];
         const location = basics.location || {};
         const profiles = basics.profiles || [];
 
@@ -233,19 +493,19 @@ class ResumeProcessor {
                 onsite_sunnyvale: onsiteSunnyvale,
                 ai_tool_experience: aiToolExperience
             },
-            education: (resumeData.education || []).map(edu => ({
+            education: (canonicalResume.education || []).map(edu => ({
                 ...edu,
                 degree: edu.studyType || edu.Discipline || "",
                 normInstitution: this.normalizeText(edu.institution),
                 normDegree: this.normalizeText(edu.studyType || edu.Discipline || ""),
                 normMajor: this.normalizeText(edu.area || "")
             })),
-            education_flat: resumeData.education && resumeData.education[0] ? {
-                institution: resumeData.education[0].institution || "",
-                degree: resumeData.education[0].studyType || resumeData.education[0].Discipline || "",
-                major: resumeData.education[0].area || "",
-                start_date: resumeData.education[0].startDate || "",
-                end_date: resumeData.education[0].endDate || ""
+            education_flat: canonicalResume.education && canonicalResume.education[0] ? {
+                institution: canonicalResume.education[0].institution || "",
+                degree: canonicalResume.education[0].studyType || canonicalResume.education[0].Discipline || "",
+                major: canonicalResume.education[0].area || "",
+                start_date: canonicalResume.education[0].startDate || "",
+                end_date: canonicalResume.education[0].endDate || ""
             } : {},
             reverse_maps: {
                 skill_to_years: skillToYears,

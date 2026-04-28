@@ -599,7 +599,7 @@ document.addEventListener('DOMContentLoaded', () => {
             applicationHistory = [];
             chrome.storage.local.set({ applicationHistory: [] }, () => {
                 renderHistory();
-                showStatus('History cleared.');
+                showStatus('History cleared.', 'success');
             });
         }
     });

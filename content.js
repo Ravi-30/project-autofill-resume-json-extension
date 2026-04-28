@@ -362,7 +362,9 @@ function setupOverlayListeners(el, queue) {
 function showToast(msg, type = 'info') {
     const t = document.createElement('div');
     t.style.cssText = `position:fixed; top:20px; right:20px; z-index:2147483647; background:${type === 'error' ? '#ef4444' : 'rgba(0,0,0,0.8)'}; color:white; padding:10px 20px; border-radius:12px; font-family:sans-serif; font-size:13px; box-shadow: 0 4px 12px rgba(0,0,0,0.2);`;
-    t.textContent = msg; doc.body.appendChild(t); setTimeout(() => t.remove(), type === 'error' ? 6000 : 3000);
+    t.textContent = msg;
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), type === 'error' ? 6000 : 3000);
 }
 
 function extractJobMetadata() {

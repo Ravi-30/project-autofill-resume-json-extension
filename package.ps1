@@ -26,24 +26,53 @@ $includes = @(
     "icons"
 )
 
-# 4. Copy files to the isolated environment
-Write-Host "Staging files..."
-foreach ($item in $includes) {
-    $src = Join-Path $projectRoot $item
-    if (Test-Path $src) {
-        Copy-Item -Path $src -Destination $tempDir -Recurse
-    }
-    else {
-        Write-Warning "Required file not found: $item"
+# 4. Resolve a Python executable
+$pythonCmd = $null
+foreach ($candidate in @("py", "python")) {
+    $cmd = Get-Command $candidate -ErrorAction SilentlyContinue
+    if ($cmd) {
+        $pythonCmd = $candidate
+        break
     }
 }
 
-# 5. Create zip using Python script for standard forward-slash support
-# This avoids "Files outside directory" errors on the Chrome Web Store
-Write-Host "Creating $zipName using Python..."
-python zip_extension.py
+if (-not $pythonCmd) {
+    throw "Python was not found in PATH. Install Python or run zip_extension.py manually."
+}
 
-# 6. Cleanup (Note: we keep the python script for future use, but it's small)
-Write-Host "`nSuccess! Your extension.zip is ready at:"
-Write-Host $zipFilepath
-Write-Host "`nUpload this file directly to the Chrome Web Store."
+try {
+    # 5. Copy files to the isolated environment
+    Write-Host "Staging files..."
+    foreach ($item in $includes) {
+        $src = Join-Path $projectRoot $item
+        if (Test-Path $src) {
+            Copy-Item -Path $src -Destination $tempDir -Recurse
+        }
+        else {
+            Write-Warning "Required file not found: $item"
+        }
+    }
+
+    # 6. Create zip using Python script for standard forward-slash support
+    # This avoids "Files outside directory" errors on the Chrome Web Store
+    Write-Host "Creating $zipName using Python..."
+    if ($pythonCmd -eq "py") {
+        & py -3 zip_extension.py --source $tempDir --output $zipFilepath
+    }
+    else {
+        & python zip_extension.py --source $tempDir --output $zipFilepath
+    }
+
+    if (-not (Test-Path $zipFilepath)) {
+        throw "Packaging finished without producing $zipName."
+    }
+
+    Write-Host "`nSuccess! Your extension.zip is ready at:"
+    Write-Host $zipFilepath
+    Write-Host "`nUpload this file directly to the Chrome Web Store."
+}
+finally {
+    if (Test-Path $tempDir) {
+        Remove-Item $tempDir -Recurse -Force
+    }
+}

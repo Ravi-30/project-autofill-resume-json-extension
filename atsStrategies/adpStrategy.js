@@ -5,7 +5,7 @@
 class AdpStrategy extends GenericStrategy {
     constructor() {
         super();
-        this.CONFIDENCE_THRESHOLD = 70; 
+        this.CONFIDENCE_THRESHOLD = 70;
     }
 
     async execute(normalizedData, aiEnabled, resumeFile = null) {
@@ -17,7 +17,7 @@ class AdpStrategy extends GenericStrategy {
         // ADP specific next/continue buttons
         const submitPatterns = ['next', 'continue', 'save & continue', 'save and continue', 'submit'];
         const allButtons = Array.from(document.querySelectorAll('button, [role="button"], input[type="button"], input[type="submit"]'));
-        
+
         const submitButtons = allButtons.filter(btn => {
             if (btn.disabled || btn.offsetParent === null) return false;
             const text = (btn.innerText || btn.value || "").toLowerCase().trim();

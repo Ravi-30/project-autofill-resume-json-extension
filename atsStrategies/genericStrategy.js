@@ -61,6 +61,30 @@ class GenericStrategy {
         };
     }
 
+    normalizeYesNoDecline(valueStr) {
+        if (!valueStr) return '';
+        const val = String(valueStr).toLowerCase().trim();
+
+        if (val === 'no' || val === 'false' || val === 'n' || val.startsWith('no,') ||
+            val.includes('not a protected') || val.includes('do not have') || val.includes("don't have") ||
+            val.includes('no, i am not') || val.includes('not hispanic') ||
+            val === 'not_a_veteran' || val === 'no_disability') {
+            return 'no';
+        }
+
+        if (val === 'yes' || val === 'true' || val === 'y' || val.startsWith('yes,') ||
+            val.includes('i am a protected veteran') || val.includes('have a disability') ||
+            val.includes('hispanic or latino') || val.includes('yes, i am')) {
+            return 'yes';
+        }
+
+        if (val.includes('decline') || val.includes('prefer not') || val.includes('choose not') || val.includes('wish not')) {
+            return 'decline';
+        }
+
+        return val;
+    }
+
     getUSVariations() {
         return ['us', 'usa', 'united states', 'united states of america', 'united states (usa)', 'us (usa)', 'u.s.a.', 'u.s.'];
     }
@@ -118,7 +142,7 @@ class GenericStrategy {
             const isCoverLetterField = combinedTxt.includes("cover");
 
             if (isResumeField && !isCoverLetterField) {
-                
+
 
                 try {
                     // Convert base64 Data URL to Blob
@@ -144,7 +168,7 @@ class GenericStrategy {
                     input.dataset.afUploaded = 'true';
                     sessionStorage.setItem(sessionKey, 'true');
                     this._hasUploadedResume = true;
-                    break; 
+                    break;
                 } catch (e) {
                     console.error("AutoFill: Error attaching file", e);
                 }
@@ -485,9 +509,9 @@ class GenericStrategy {
                 } else {
                     // Check if it's a required field that was missed
                     if (input.required || input.getAttribute('aria-required') === 'true') {
-                        
+
                         if (aiEnabled) {
-                            
+
                             // Trigger AI Fallback
                             const aiValue = await this.triggerAIFallback(input, normalizedData);
                             if (aiValue) {
@@ -622,6 +646,14 @@ class GenericStrategy {
             }
         }
 
+        // Prevent Full Name, First Name, Last Name from matching referral/reference fields
+        if (fieldKey === "identity.full_name" || fieldKey === "identity.first_name" || fieldKey === "identity.last_name") {
+            const combinedTxt = `${features.name_attr} ${features.id_attr} ${features.label_text}`.toLowerCase();
+            if (combinedTxt.includes("refer") || combinedTxt.includes("manager") || combinedTxt.includes("spouse") || combinedTxt.includes("partner")) {
+                keywordScore -= 100;
+            }
+        }
+
         let contextScore = 0;
         keywords.forEach(keyword => {
             if (features.nearby_text && features.nearby_text.includes(keyword.toLowerCase())) {
@@ -738,7 +770,7 @@ class GenericStrategy {
             if (confidence > bestMatch.confidence) {
                 const value = this.getNestedValue(normalizedData, fieldKey);
 
-                if (value) {
+                if (value !== undefined && value !== null) {
                     bestMatch = { value, confidence, fieldKey };
                     //  = "${String(value).substring(0, 40)}..."`);
                 }
@@ -784,25 +816,26 @@ class GenericStrategy {
      */
     handleRadioCheckbox(input, normalizedData) {
         const match = this.findValueForInput(input, normalizedData);
-        if (!match || !match.value) return;
+        if (!match || (!match.value && match.value !== "")) return;
 
-        const val = String(match.value).toLowerCase();
+        const rawVal = String(match.value).toLowerCase();
+        const val = this.normalizeYesNoDecline(rawVal);
         const labelText = (this.getLabelText(input) || "").toLowerCase();
 
         if (input.type === 'radio') {
-            // If the label matches the value, or common synonyms
+            // Avoid matching 'no' to any label that just contains 'no' (like 'unknown')
+            const isExactNoMatch = (val === 'no' && (labelText === 'no' || labelText === 'n' || labelText.includes('not a protected veteran') || labelText.includes('not hispanic') || labelText.includes('no, i am not') || labelText.includes("no, i don't") || labelText.includes("do not have a disability")));
+            const isExactYesMatch = (val === 'yes' && (labelText === 'yes' || labelText === 'y' || labelText.includes('yes,') || labelText.includes('i am a protected veteran') || labelText.includes('hispanic or latino')));
+
             const isPositiveMatch =
-                labelText.includes(val) ||
-                (val === 'yes' && (labelText === 'yes' || labelText === 'y' || labelText.includes('yes, i am hispanic') || labelText.includes('hispanic or latino'))) ||
-                (val === 'no' && (labelText === 'no' || labelText === 'n' || labelText.includes('not hispanic'))) ||
+                isExactNoMatch || isExactYesMatch ||
                 (val === 'male' && labelText === 'male') ||
                 (val === 'female' && labelText === 'female') ||
                 (val === 'non-binary' && labelText.includes('non-binary')) ||
-                ((val === 'no' || val === 'not_a_veteran') && (labelText.includes('not a protected veteran') || labelText.includes('no, i am not'))) ||
-                ((val === 'no' || val === 'no_disability') && (labelText.includes('no, i do not have a disability') || labelText.includes("no, i don't"))) ||
+                (val === 'decline' && (labelText.includes('decline') || labelText.includes('choose not') || labelText.includes('wish not') || labelText.includes('prefer not'))) ||
                 (val.includes('he/him') && labelText.includes('he/him')) ||
                 (val.includes('she/her') && labelText.includes('she/her')) ||
-                (val.includes('decline') && (labelText.includes('decline') || labelText.includes('choose not') || labelText.includes('wish not') || labelText.includes('prefer not')));
+                (val !== 'no' && val !== 'yes' && val !== 'decline' && val.length > 2 && labelText.includes(val)); // only use broad includes if it's not a short affirmative/negative
 
             if (isPositiveMatch) {
                 input.checked = true;
@@ -907,9 +940,12 @@ class GenericStrategy {
         if (!select || !value) return;
 
         const normalize = (s) => String(s).toLowerCase().replace(/[^\w\s]/g, '').trim();
-        const val = normalize(value);
+        let val = normalize(value);
         const usVariations = this.getUSVariations();
         const isUSValue = usVariations.includes(val);
+
+        // Map complex values like "i am not a protected veteran" to "no"
+        const mappedVal = this.normalizeYesNoDecline(value);
 
         let bestOptionIndex = -1;
         let highestConfidence = 0;
@@ -935,13 +971,13 @@ class GenericStrategy {
             }
 
             // 3. Logic Equivalence (Yes/No/Decline)
-            if (val === 'no' && (optText.includes("not a protected veteran") || optText.includes("do not have a disability") || optText.includes("not hispanic") || optText === 'no' || optText === 'n')) {
+            if (mappedVal === 'no' && (optText.includes("not a protected veteran") || optText.includes("do not have a disability") || optText.includes("not hispanic") || optText === 'no' || optText === 'n')) {
                 if (98 > highestConfidence) { bestOptionIndex = i; highestConfidence = 98; }
             }
-            if (val === 'yes' && (optText === 'yes' || optText === 'y' || optText === 'true' || optText.includes("i am a protected veteran") || optText.includes("hispanic or latino"))) {
+            if (mappedVal === 'yes' && (optText === 'yes' || optText === 'y' || optText === 'true' || optText.includes("i am a protected veteran") || optText.includes("hispanic or latino"))) {
                 if (98 > highestConfidence) { bestOptionIndex = i; highestConfidence = 98; }
             }
-            if (val.includes('decline') && (optText.includes('decline') || optText.includes('choose not') || optText.includes('prefer not'))) {
+            if (mappedVal === 'decline' && (optText.includes('decline') || optText.includes('choose not') || optText.includes('prefer not'))) {
                 if (98 > highestConfidence) { bestOptionIndex = i; highestConfidence = 98; }
             }
 
@@ -1067,7 +1103,7 @@ class GenericStrategy {
      * Collects context and sends a prompt to the Gemini API via background script.
      */
     async triggerAIFallback(input, normalizedData) {
-        
+
         const features = this.extractFeatures(input);
         const pageContext = this.getPageContext();
         const labelText = features.label_text || features.aria_label || features.placeholder || "this field";
@@ -1098,7 +1134,7 @@ class GenericStrategy {
         const originalPlaceholder = input.placeholder;
         input.placeholder = "AI is thinking...";
 
-        
+
 
         // Build a concise prompt with resume and job context
         const prunedData = (typeof ResumeProcessor !== 'undefined') ? ResumeProcessor.pruneForAi(normalizedData) : normalizedData;
