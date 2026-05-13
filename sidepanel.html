@@ -25,7 +25,7 @@
           <line x1="16" y1="17" x2="8" y2="17"></line>
           <polyline points="10 9 9 9 8 9"></polyline>
         </svg>
-        <h2 style="margin: 0;">AutoFill Resumes</h2>
+        <h2 style="margin: 0;">TalentScreen Autofill</h2>
       </div>
 
       <!-- Profile Selector -->
@@ -46,36 +46,45 @@
     <!-- File Upload Section -->
     <div class="upload-section">
       <h3 style="margin-top: 0; margin-bottom: 8px; font-size: 14px;">Create / Replace Profile</h3>
-      <label for="resumeInput" class="upload-btn">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-          <polyline points="17 8 12 3 7 8"></polyline>
-          <line x1="12" y1="3" x2="12" y2="15"></line>
-        </svg>
-        Upload resume.json
-      </label>
+      
+      <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+        <label for="resumeInput" class="upload-btn" style="margin: 0;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          Upload resume.json
+        </label>
+        <button id="validateJsonBtn" class="validate-btn" title="Validate JSON">Validate</button>
+      </div>
       <input type="file" id="resumeInput" accept=".json" class="hidden">
 
-      <label for="resumeFileInput" class="upload-btn" style="margin-top: 8px; background-color: var(--secondary);">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-          <polyline points="14 2 14 8 20 8"></polyline>
-          <line x1="16" y1="13" x2="8" y2="13"></line>
-          <line x1="16" y1="17" x2="8" y2="17"></line>
-          <polyline points="10 9 9 9 8 9"></polyline>
-        </svg>
-        <span id="resumeFileName">Upload PDF/DOCX</span>
-      </label>
+      <div style="display: flex; gap: 8px;">
+        <label for="resumeFileInput" class="upload-btn" style="margin: 0; background-color: var(--secondary);">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <polyline points="10 9 9 9 8 9"></polyline>
+          </svg>
+          <span id="resumeFileName">Upload PDF/DOCX</span>
+        </label>
+        <button id="validatePdfBtn" class="validate-btn" title="Validate PDF">Validate</button>
+      </div>
       <input type="file" id="resumeFileInput" accept=".pdf,.doc,.docx" class="hidden">
     </div>
 
     <!-- Controls Section -->
-      <button id="fillFormBtn" class="action-btn" disabled>
-        Force Fill Form
-      </button>
-      <button id="viewResumeBtn" class="secondary-btn" disabled>
-        View Stored Data
-      </button>
+      <div class="controls-section" style="margin-top: 12px;">
+        <button id="fillFormBtn" class="action-btn" disabled>
+          Force Fill Form
+        </button>
+        <button id="viewResumeBtn" class="secondary-btn" disabled>
+          View Stored Data
+        </button>
+      </div>
     </div>
 
 

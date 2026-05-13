@@ -21,6 +21,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const resumeContent = document.getElementById('resumeContent');
     const profileSelect = document.getElementById('profileSelect');
     const deleteProfileBtn = document.getElementById('deleteProfileBtn');
+    const validateJsonBtn = document.getElementById('validateJsonBtn');
+    const validatePdfBtn = document.getElementById('validatePdfBtn');
 
 
     // History Tab Elements
@@ -272,6 +274,56 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
 
+
+    if (validateJsonBtn) {
+        validateJsonBtn.addEventListener('click', () => {
+            if (!activeProfileName || !savedProfiles[activeProfileName] || !savedProfiles[activeProfileName].resumeData) {
+                showStatus('Please upload a JSON file first.', 'error');
+                return;
+            }
+            
+            const profile = savedProfiles[activeProfileName];
+            try {
+                // Check if it's a valid object
+                if (typeof profile.resumeData !== 'object' || profile.resumeData === null) {
+                    throw new Error("Invalid JSON structure");
+                }
+                
+                const norm = profile.normalizedData || ResumeProcessor.normalize(profile.resumeData);
+                const missing = [];
+                if (!norm.identity || !norm.identity.first_name) missing.push("Name");
+                if (!norm.contact || !norm.contact.email) missing.push("Email");
+                if (!norm.employment || !norm.employment.history || norm.employment.history.length === 0) missing.push("Work Experience");
+                
+                if (missing.length > 0) {
+                    showStatus(`Valid JSON, but missing: ${missing.join(', ')}`, 'error');
+                } else {
+                    showStatus('JSON format is valid and complete!', 'success');
+                }
+            } catch (err) {
+                showStatus('Invalid JSON format.', 'error');
+            }
+        });
+    }
+
+    if (validatePdfBtn) {
+        validatePdfBtn.addEventListener('click', () => {
+            if (!activeProfileName || !savedProfiles[activeProfileName] || !savedProfiles[activeProfileName].resumeFile) {
+                showStatus('Please upload a PDF/DOCX file first.', 'error');
+                return;
+            }
+            
+            const file = savedProfiles[activeProfileName].resumeFile;
+            const name = (file.name || '').toLowerCase();
+            const type = (file.type || '').toLowerCase();
+            
+            if (name.endsWith('.pdf') || name.endsWith('.doc') || name.endsWith('.docx') || type.includes('pdf') || type.includes('word')) {
+                showStatus('Document format is valid!', 'success');
+            } else {
+                showStatus('Invalid format. Must be PDF or DOCX.', 'error');
+            }
+        });
+    }
 
     fillFormBtn.addEventListener('click', () => {
         chrome.storage.local.get(['resumeData', 'resumeFile'], (result) => {
