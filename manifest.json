@@ -1,19 +1,48 @@
 {
   "manifest_version": 3,
-  "name": "AutoFill Job Applications",
-  "version": "1.1",
-  "description": "Auto-fills job application forms and generates AI answers.",
+  "name": "TalentScreen Autofill",
+  "version": "1.6",
+  "description": "Auto-fills job application forms using your locally stored resume data.",
+  "author": "Sampath Velupula, Ravi Kumar Rayapalli, Jafar vali, Ramana gangarao, Bavish Kangari, jatin Thakur",
   "permissions": [
     "storage",
     "contextMenus",
     "sidePanel",
-    "tabs"
+    "activeTab"
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' http://localhost:11434 https://api.openai.com https://api.anthropic.com;"
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self';"
   },
   "host_permissions": [
-    "*://*/*"
+    "*://*.myworkdayjobs.com/*",
+    "*://*.greenhouse.io/*",
+    "*://boards.greenhouse.io/*",
+    "*://jobs.lever.co/*",
+    "*://*.smartrecruiters.com/*",
+    "*://*.applytojob.com/*",
+    "*://*.bamboohr.com/*",
+    "*://*.icims.com/*",
+    "*://*.indeed.com/*",
+    "*://*.linkedin.com/*",
+    "*://*.workable.com/*",
+    "*://*.taleo.net/*",
+    "*://*.successfactors.com/*",
+    "*://*.successfactors.eu/*",
+    "*://*.personio.com/*",
+    "*://*.personio.de/*",
+    "*://*.recruitee.com/*",
+    "*://*.teamtailor.com/*",
+    "*://*.ultipro.com/*",
+    "*://*.myultipro.com/*",
+    "*://*.ukg.com/*",
+    "*://*.paycomonline.net/*",
+    "*://*.paychex.com/*",
+    "*://*.oraclecloud.com/*",
+    "*://*.brassring.com/*",
+    "*://*.ashbyhq.com/*",
+    "*://workforcenow.adp.com/*",
+    "*://jobs.jobvite.com/*",
+    "*://*.rippling-ats.com/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -27,7 +56,35 @@
   "content_scripts": [
     {
       "matches": [
-        "*://*/*"
+        "*://*.myworkdayjobs.com/*",
+        "*://*.greenhouse.io/*",
+        "*://boards.greenhouse.io/*",
+        "*://jobs.lever.co/*",
+        "*://*.smartrecruiters.com/*",
+        "*://*.applytojob.com/*",
+        "*://*.bamboohr.com/*",
+        "*://*.icims.com/*",
+        "*://*.indeed.com/*",
+        "*://*.linkedin.com/*",
+        "*://*.workable.com/*",
+        "*://*.taleo.net/*",
+        "*://*.successfactors.com/*",
+        "*://*.successfactors.eu/*",
+        "*://*.personio.com/*",
+        "*://*.personio.de/*",
+        "*://*.recruitee.com/*",
+        "*://*.teamtailor.com/*",
+        "*://*.ultipro.com/*",
+        "*://*.myultipro.com/*",
+        "*://*.ukg.com/*",
+        "*://*.paycomonline.net/*",
+        "*://*.paychex.com/*",
+        "*://*.oraclecloud.com/*",
+        "*://*.brassring.com/*",
+        "*://*.ashbyhq.com/*",
+        "*://workforcenow.adp.com/*",
+        "*://jobs.jobvite.com/*",
+        "*://*.rippling-ats.com/*"
       ],
       "js": [
         "resumeProcessor.js",

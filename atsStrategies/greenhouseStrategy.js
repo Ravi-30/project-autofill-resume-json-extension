@@ -5,51 +5,72 @@ class GreenhouseStrategy extends GenericStrategy {
         this.executed = false;
     }
 
-    async execute(normalizedData, aiEnabled, resumeFile = null) {
-        // Allow re-execution for auto-apply queue (check if this is a new page load)
-        if (this.executed && window.location.href === this.lastExecutedUrl) {
-            // console.log("GreenhouseStrategy already executed on this URL. Skipping...");
-            return;
-        }
-
+    async execute(normalizedData, resumeFile = null) {
         if (!normalizedData) {
             console.error("No resume data provided.");
             return;
         }
 
-        this.executed = true;
-        this.lastExecutedUrl = window.location.href;
-        // console.log("Executing GreenhouseStrategy...");
-        // console.log("  - Resume has:", {
-            name: normalizedData.identity?.first_name,
-            email: normalizedData.contact?.email,
-            education: normalizedData.education?.length || 0,
-            employment: normalizedData.employment?.history?.length || 0
-        });
+
 
         // Check if this is a Greenhouse form by looking for key indicators
-        const hasGreenhouseForm = !!document.querySelector('[id*="application-form"], [id*="job-application"], [class*="greenhouse"]');
-        const inputFields = document.querySelectorAll('input, textarea, select');
-        // console.log("  - Page has", inputFields.length, "input/textarea/select fields");
-        // console.log("  - Greenhouse form detected:", hasGreenhouseForm);
+        let hasGreenhouseForm = !!document.querySelector('[id*="application-form"], [id*="job-application"], [class*="greenhouse"], form[action*="greenhouse.io"]');
+        let inputFields = document.querySelectorAll('input:not([type="hidden"]), textarea, select');
 
         if (!hasGreenhouseForm && inputFields.length === 0) {
-            console.warn("GreenhouseStrategy: No form elements detected on this page - might not be a job application page");
+            const formFound = await this._waitForForm();
+            if (formFound) {
+                hasGreenhouseForm = true;
+                inputFields = document.querySelectorAll('input, textarea, select');
+            }
         }
 
-        // Run base fill first (handles text inputs, textareas, native selects)
-        // console.log("✓ Starting base fill (GenericStrategy)...");
-        await super.execute(normalizedData, aiEnabled, resumeFile);
+        // Execution Guard: If we already filled a form on this EXACT URL, skip.
+        // We only trigger this guard if we actually found fields to fill.
+        if (this.executed && window.location.href === this.lastExecutedUrl && inputFields.length > 0) {
+            return;
+        }
 
-        // Then handle Greenhouse-specific custom components (Select2, country)
-        // Slight delay to let Select2 initialize after base fill
-        await this.sleep(300);
-        // console.log("✓ Filling Greenhouse education dropdowns...");
-        this._fillGreenhouseEducation(normalizedData);
-        // console.log("✓ Filling country dropdown...");
-        this._fillCountryDropdown(normalizedData);
+        // Logic flow:
+        // 1. Run super.execute to handle "Apply" button clicking AND generic field filling
+        await super.execute(normalizedData, resumeFile);
 
-        // console.log("✓ Greenhouse AutoFill complete.");
+        // 2. Refresh input detection after super.execute (in case "Apply" was clicked or form appeared)
+        inputFields = document.querySelectorAll('input:not([type="hidden"]), textarea, select');
+
+        if (inputFields.length > 0) {
+            this.executed = true;
+            this.lastExecutedUrl = window.location.href;
+
+            await this.sleep(400);
+
+            // 3. Run Greenhouse-specific refinements (Select2, Remix, etc.)
+            await this._fillGreenhouseEducation(normalizedData);
+            await this._fillCountryDropdown(normalizedData);
+            await this._fillAllCustomSelects(normalizedData);
+        } else {
+            // If still no fields, don't set this.executed = true so we can try again on next mutation
+        }
+    }
+
+    async _waitForForm() {
+        return new Promise((resolve) => {
+            let attempts = 0;
+            const maxAttempts = 15; // 15 * 200ms = 3s total
+            const interval = setInterval(() => {
+                const form = document.querySelector('[id*="application-form"], [id*="job-application"], form[action*="greenhouse.io"], .application--form');
+                const inputs = document.querySelectorAll('input:not([type="hidden"]), select, textarea');
+                if (form || inputs.length > 5) {
+                    clearInterval(interval);
+                    resolve(true);
+                }
+                attempts++;
+                if (attempts >= maxAttempts) {
+                    clearInterval(interval);
+                    resolve(false);
+                }
+            }, 200);
+        });
     }
 
     /* ===============================
@@ -61,7 +82,7 @@ class GreenhouseStrategy extends GenericStrategy {
          2. Or simulate Select2's own option-click flow
     ================================== */
 
-    _fillGreenhouseEducation(normalizedData) {
+    async _fillGreenhouseEducation(normalizedData) {
         const education = normalizedData.education || [];
         if (!education.length) return;
 
@@ -92,7 +113,7 @@ class GreenhouseStrategy extends GenericStrategy {
         // If still no blocks found, treat the whole document as one block
         if (blocks.length === 0) blocks = [document];
 
-        blocks.forEach((block, idx) => {
+        blocks.forEach(async (block, idx) => {
             const edu = education[idx] || education[0];
             if (!edu) return;
 
@@ -103,287 +124,130 @@ class GreenhouseStrategy extends GenericStrategy {
             // console.log(`GH: Education block ${idx}: institution="${institution}", degree="${degree}", major="${major}"`);
 
             // Fill each field in this block
-            this._fillSelect2InBlock(block, ['school', 'institution', 'university', 'college'], institution);
-            this._fillSelect2InBlock(block, ['degree', 'level_of_education', 'studytype'], degree);
-            this._fillSelect2InBlock(block, ['discipline', 'major', 'field_of_study', 'area'], major);
+            // Try legacy Select2 selectors first
+            await this._fillSelect2InBlock(block, ['school', 'institution', 'university', 'college'], institution);
+            await this._fillSelect2InBlock(block, ['degree', 'level_of_education', 'studytype'], degree);
+            await this._fillSelect2InBlock(block, ['discipline', 'major', 'field_of_study', 'area'], major);
+
+            // Then try Remix (job-boards.greenhouse.io) selects
+            await this._fillRemixSelectInBlock(block, ['school', 'institution', 'university', 'college'], institution);
+            await this._fillRemixSelectInBlock(block, ['degree', 'level_of_education', 'studytype'], degree);
+            await this._fillRemixSelectInBlock(block, ['discipline', 'major', 'field_of_study', 'area'], major);
         });
     }
 
     /**
-     * Fills a Select2 dropdown within a given block by keyword matching.
-     *
-     * Greenhouse Select2 pattern:
-     *   <select id="education_0_school" class="select2-hidden-accessible" ...>
-     *     <option>Master's Degree</option>...
-     *   </select>
-     *   <span class="select2 select2-container">
-     *     <span class="select2-selection">...</span>
-     *   </span>
-     *
-     * Strategy:
-     *   1. If jQuery + Select2 are available → use $(select).val(val).trigger('change')
-     *   2. Otherwise → click the Select2 trigger, wait, then click the matching option
-     *   3. Final fallback → setSelectValue on the raw <select>
+     * Fills a Remix-based select (job-boards.greenhouse.io) within a block.
+     * These components use an <input role="combobox"> or similar and have
+     * a nearby label. Clicking the input opens a list of options.
      */
-    _fillSelect2InBlock(block, keyFragments, value) {
+    async _fillRemixSelectInBlock(block, keyFragments, value) {
         if (!value) return;
 
         const normalize = s => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
         const normValue = normalize(value);
 
-        // Find all <select> elements in this block
-        const selects = Array.from((block === document ? document : block).querySelectorAll('select'));
-        if (selects.length === 0) return; // Modern GH boards use <input>, handled by base GenericStrategy
+        // Find inputs that look like Remix selects
+        const inputs = Array.from((block === document ? document : block).querySelectorAll('input[role="combobox"], input.select__input'));
 
-        for (const sel of selects) {
+        for (const input of inputs) {
             const combined = normalize(
-                (sel.id || "") + " " +
-                (sel.name || "") + " " +
-                (this.getLabelText(sel) || "") + " " +
-                (sel.getAttribute('aria-label') || "")
+                (input.id || "") + " " +
+                (input.name || "") + " " +
+                (this.getLabelText(input) || "") + " " +
+                (input.getAttribute('aria-label') || "")
             );
 
             if (!keyFragments.some(k => combined.includes(normalize(k)))) continue;
 
-            // console.log(`GH: Found select for [${keyFragments}]: id="${sel.id}", options=${sel.options.length}`);
-
-            // --- Strategy 1: jQuery + Select2 API ---
-            if (typeof window.$ !== 'undefined' && typeof window.$.fn.select2 !== 'undefined') {
-                try {
-                    // Find the best matching option
-                    const bestIdx = this._findBestOption(sel, value, normalize, normValue);
-                    if (bestIdx !== null) {
-                        const bestValueString = sel.options[bestIdx].value;
-                        window.$(sel).val(bestValueString).trigger('change');
-                        // console.log(`GH: jQuery Select2 set [${keyFragments}] = "${bestValueString}"`);
-                        return;
-                    }
-                } catch (e) {
-                    console.warn("GH: jQuery Select2 approach failed:", e);
-                }
-            }
-
-            // --- Strategy 2: Click the Select2 trigger span ---
-            // The Select2 container is typically the next sibling of the hidden select
-            const container = sel.nextElementSibling?.classList?.contains('select2')
-                ? sel.nextElementSibling
-                : document.querySelector(`.select2-container[data-select2-id="${sel.getAttribute('data-select2-id')}"]`)
-                || document.querySelector(`.select2-container[aria-controls*="${sel.id}"]`);
-
-            if (container) {
-                const trigger = container.querySelector('.select2-selection');
-                if (trigger) {
-                    // Open dropdown
-                    trigger.click();
-                    trigger.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-
-                    setTimeout(() => {
-                        // Find options in the opened dropdown
-                        const opts = Array.from(document.querySelectorAll(
-                            '.select2-results__option, .select2-results li'
-                        ));
-
-                        let bestOpt = null;
-                        let bestScore = 0;
-                        for (const opt of opts) {
-                            const optNorm = normalize(opt.innerText || "");
-                            let score = 0;
-                            if (optNorm === normValue) score = 100;
-                            else if (optNorm.startsWith(normValue) || normValue.startsWith(optNorm)) score = 80;
-                            else if (optNorm.includes(normValue) || normValue.includes(optNorm)) score = 60;
-                            if (score > bestScore) { bestScore = score; bestOpt = opt; }
-                        }
-
-                        if (bestOpt && bestScore >= 60) {
-                            bestOpt.click();
-                            // console.log(`GH: Select2 click-select [${keyFragments}] = "${bestOpt.innerText}"`);
-                        } else {
-                            console.warn(`GH: No matching option for "${value}" in Select2 (best ${bestScore})`);
-                            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-                        }
-                    }, 300);
-                    return;
-                }
-            }
-
-            // --- Strategy 3: Raw <select> fallback ---
-            const bestIdx = this._findBestOption(sel, value, normalize, normValue);
-            if (bestIdx !== null) {
-                sel.selectedIndex = parseInt(bestIdx);
-                this._triggerReactChange(sel, sel.value);
-                // console.log(`GH: Raw select fallback [${keyFragments}] = idx ${bestIdx}`);
-            }
+            // Found the right input. Click it to open the menu.
+            await this._selectRemixOption(input, value, normalize, normValue);
             return;
         }
-
-        // console.log(`GH: No Select2 found for [${keyFragments}] with value "${value}" (may be a modern text input instead)`);
     }
 
-    /**
-     * Finds the best matching option INDEX in a <select> element.
-     * Returns the integer index of the best match.
-     * Returns null if no match found.
-     */
-    _findBestOption(select, value, normalize, normValue) {
-        let bestIdx = -1;
-        let bestScore = 0;
+    async _selectRemixOption(input, value, normalize, normValue) {
+        if (!input || !value) return;
 
-        const usVariations = this.getUSVariations();
-        const isUS = usVariations.includes(normValue);
+        try {
+            // Click to open
+            input.click();
+            await this.sleep(300);
 
-        for (let i = 0; i < select.options.length; i++) {
-            const opt = select.options[i];
-            const optText = normalize(opt.text || "");
-            const optVal = normalize(opt.value || "");
-            let score = 0;
+            // Search for options in the popover
+            const options = Array.from(document.querySelectorAll('[role="option"], .select__option'));
+            let bestOption = null;
+            let highestConf = 0;
 
-            if (optText === normValue || optVal === normValue) score = 100;
-            else if (isUS && (usVariations.includes(optText) || usVariations.includes(optVal))) score = 95;
-            else if (optText.startsWith(normValue) || normValue.startsWith(optText)) score = 80;
-            else if (optText.includes(normValue) || normValue.includes(optText)) score = 60;
-
-            if (score > bestScore) { bestScore = score; bestIdx = i; }
-        }
-
-        if (bestIdx !== -1 && bestScore >= 60) {
-            return bestIdx; // Return integer index
-        }
-        return null;
-    }
-
-    /* ===============================
-       COUNTRY DROPDOWN
-       Greenhouse shows "Country" as a native <select> beside the phone field.
-       The current issue was the value "United States +1" not matching any option.
-       With the resume.json fix to "United States" this should now work via the
-       generic strategy, but we add explicit Greenhouse handling as insurance.
-    ================================== */
-
-    _fillCountryDropdown(normalizedData) {
-        const country = normalizedData?.contact?.country || "";
-        if (!country) return;
-
-        const normalize = s => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-        const normCountry = normalize(country);
-
-        // Find country selects
-        const selects = Array.from(document.querySelectorAll('select')).filter(sel => {
-            const combined = normalize(
-                (sel.id || "") + " " + (sel.name || "") + " " + (this.getLabelText(sel) || "")
-            );
-            return combined.includes("country");
-        });
-
-        for (const sel of selects) {
-            const bestIdx = this._findBestOption(sel, country, normalize, normCountry);
-            if (bestIdx !== null) {
-                const bestValue = sel.options[bestIdx].value;
-                // Try jQuery + Select2 first
-                if (typeof window.$ !== 'undefined' && typeof window.$.fn.select2 !== 'undefined') {
-                    try {
-                        window.$(sel).val(bestValue).trigger('change');
-                        // console.log(`GH: Country set via jQuery Select2 = "${bestValue}"`);
-                        return;
-                    } catch (e) { /* fall through */ }
+            options.forEach(opt => {
+                const optText = (opt.innerText || "").toLowerCase();
+                const normOpt = normalize(optText);
+                
+                if (normOpt === normValue) {
+                    bestOption = opt;
+                    highestConf = 100;
+                } else if (normOpt.includes(normValue) || normValue.includes(normOpt)) {
+                    if (highestConf < 80) {
+                        bestOption = opt;
+                        highestConf = 80;
+                    }
                 }
-                // Raw fallback
-                sel.value = bestValue;
-                this._triggerReactChange(sel, bestValue);
-                // console.log(`GH: Country set via raw select = "${bestValue}"`);
+            });
+
+            if (bestOption) {
+                bestOption.click();
+                await this.sleep(100);
+            } else {
+                // Fallback: just try to type in the input
+                this.setInputValue(input, value);
+                // Press Enter to confirm if it's a searchable combobox
+                input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+            }
+        } catch (e) {
+            // SILENT
+        }
+    }
+
+    async _fillSelect2InBlock(block, keyFragments, value) {
+        if (!value) return;
+        const selects = Array.from((block === document ? document : block).querySelectorAll('select.select2-hidden-accessible, select[data-s2]'));
+
+        for (const select of selects) {
+            const container = select.closest('.field') || select.parentElement;
+            const labelTxt = (container?.innerText || "").toLowerCase();
+            const combined = (select.id || "") + " " + (select.name || "") + " " + labelTxt;
+
+            if (keyFragments.some(k => combined.includes(k.toLowerCase()))) {
+                // Use the refactored fuzzy matching from GenericStrategy
+                this.setSelectValue(select, value);
                 return;
             }
         }
-
-        // console.log(`GH: No country dropdown found for "${country}" (may be a generic field or absent)`);
     }
 
-    /**
-     * Properly triggers React's change detection via the native setter trick.
-     */
-    _triggerReactChange(input, value) {
-        const proto = input.tagName === 'TEXTAREA'
-            ? window.HTMLTextAreaElement.prototype
-            : window.HTMLInputElement.prototype;
-
-        const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
-        if (nativeSetter) {
-            nativeSetter.call(input, value);
-        } else {
-            input.value = value;
+    async _fillCountryDropdown(normalizedData) {
+        const country = normalizedData?.contact?.country || "";
+        if (!country) return;
+        
+        // Greenhouse uses a standard select for country usually, but sometimes Select2
+        await this._fillSelect2InBlock(document, ['country'], country);
+        
+        const countrySelect = document.querySelector('select[id*="country"], select[name*="country"]');
+        if (countrySelect) {
+            this.setSelectValue(countrySelect, country);
         }
+    }
 
-        const tracker = input._valueTracker;
-        if (tracker) tracker.setValue('');
-
-        ['input', 'change', 'blur'].forEach(ev => {
-            input.dispatchEvent(new Event(ev, { bubbles: true, composed: true }));
+    async _fillAllCustomSelects(normalizedData) {
+        // Find all Select2 and custom selects that haven't been filled
+        const selects = document.querySelectorAll('select.select2-hidden-accessible');
+        selects.forEach(select => {
+            if (select.value && select.value !== "" && select.value !== "0") return;
+            const match = this.findValueForInput(select, normalizedData);
+            if (match && match.value) {
+                this.setSelectValue(select, match.value);
+            }
         });
-    }
-
-    /* ===============================
-       OVERRIDDEN MATCHING LOGIC
-    ================================== */
-
-    findValueForInput(input, normalizedData) {
-        let match = this.findGreenhouseSpecificMatch(input, normalizedData);
-        if (!match || !match.value) {
-            match = super.findValueForInput(input, normalizedData);
-        }
-        return match;
-    }
-
-    findGreenhouseSpecificMatch(input, data) {
-        const id = (input.id || "").toLowerCase();
-        const name = (input.name || "").toLowerCase();
-        let labelTxt = "";
-
-        if (input.id) {
-            const label = document.querySelector(`label[for="${input.id}"]`);
-            if (label) labelTxt = label.innerText.toLowerCase();
-        }
-
-        if (!labelTxt) {
-            const parent = input.closest("div") || input.parentElement;
-            labelTxt = parent?.innerText?.toLowerCase() || "";
-        }
-
-        const identity = data?.identity || {};
-        const contact = data?.contact || {};
-
-        if (id.includes("first_name") || name.includes("first_name"))
-            return { value: identity.first_name, confidence: 100, fieldKey: "identity.first_name" };
-
-        if (id.includes("last_name") || name.includes("last_name"))
-            return { value: identity.last_name, confidence: 100, fieldKey: "identity.last_name" };
-
-        if (id.includes("preferred_name") || name.includes("preferred_name") || labelTxt.includes("preferred first name") || labelTxt.includes("nickname"))
-            return { value: identity.preferred_name, confidence: 100, fieldKey: "identity.preferred_name" };
-
-        if (id.includes("email") || name.includes("email"))
-            return { value: contact.email, confidence: 100, fieldKey: "contact.email" };
-
-        if (id.includes("phone") || name.includes("phone"))
-            return { value: contact.phone, confidence: 100, fieldKey: "contact.phone" };
-
-        if (labelTxt.includes("linkedin") || id.includes("linkedin"))
-            return { value: contact.linkedin, confidence: 100, fieldKey: "contact.linkedin" };
-
-        if (labelTxt.includes("github") || labelTxt.includes("portfolio") || labelTxt.includes("website")) {
-            const fieldKey = labelTxt.includes("github") ? "contact.github" : "contact.portfolio";
-            const portfolio = contact.portfolio || contact.github;
-            return { value: portfolio, confidence: 95, fieldKey };
-        }
-
-        // Custom Questions / Citizenship
-        if (labelTxt.includes("sponsorship") || labelTxt.includes("visa status") || labelTxt.includes("work authorization")) {
-            return { value: identity.sponsorship_required, confidence: 90, fieldKey: "identity.sponsorship_required" };
-        }
-
-        if (labelTxt.includes("claude") || labelTxt.includes("cursor") || labelTxt.includes("ai tool")) {
-            return { value: data.summary.ai_tool_experience, confidence: 90, fieldKey: "summary.ai_tool_experience" };
-        }
-
-        return null;
     }
 }
 
@@ -394,9 +258,12 @@ class GreenhouseStrategy extends GenericStrategy {
 if (typeof ATSStrategyRegistry !== "undefined") {
     ATSStrategyRegistry.register(
         (url, doc) => url.includes("greenhouse.io") ||
+            url.includes("gh_jid=") || 
             !!doc.querySelector('meta[content*="greenhouse"]') ||
             !!doc.querySelector('.grnhse-wrapper') ||
-            !!doc.querySelector('#grnhse_app'),
+            !!doc.querySelector('#grnhse_app') ||
+            !!doc.querySelector('.application--form') ||
+            !!doc.querySelector('form[action*="greenhouse.io"]'),
         GreenhouseStrategy
     );
 }

@@ -5,6 +5,14 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
 
+    // Connect to background and signal window ID for context isolation
+    const port = chrome.runtime.connect({ name: "sidepanel" });
+    chrome.windows.getCurrent((win) => {
+        if (win && win.id) {
+            port.postMessage({ action: 'register_window', windowId: win.id });
+        }
+    });
+
     const resumeInput = document.getElementById('resumeInput');
     const fillFormBtn = document.getElementById('fillFormBtn');
     const viewResumeBtn = document.getElementById('viewResumeBtn');
@@ -15,14 +23,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const deleteProfileBtn = document.getElementById('deleteProfileBtn');
     const nextPageBtn = document.getElementById('nextPageBtn');
 
+    // History Tab Elements
+    const historyList = document.getElementById('historyList');
+    const clearHistoryBtn = document.getElementById('clearHistoryBtn');
+
     // Summary Panel Elements
     const summaryPanelContainer = document.getElementById('summaryPanelContainer');
     const summaryTableBody = document.getElementById('summaryTableBody');
     const applyEditsBtn = document.getElementById('applyEditsBtn');
 
-    const atsSelector = document.getElementById('atsSelector');
-    const customAnswersInput = document.getElementById('customAnswersInput');
-    const saveCustomAnswersBtn = document.getElementById('saveCustomAnswersBtn');
+    // const atsSelector = document.getElementById('atsSelector');
+    // const customAnswersInput = document.getElementById('customAnswersInput');
+    // const saveCustomAnswersBtn = document.getElementById('saveCustomAnswersBtn');
 
     // Auto-Apply Queue Elements
     const jobsInput = document.getElementById('jobsInput');
@@ -44,16 +56,36 @@ document.addEventListener('DOMContentLoaded', () => {
     let savedProfiles = {};
     let activeProfileName = null;
     let autoApplyJobs = [];
+    let applicationHistory = [];
+
+    // --- 0. Tab Switching Logic ---
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const targetTab = btn.getAttribute('data-tab');
+
+            // Toggle Buttons
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            // Toggle Content
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.add('hidden');
+            });
+            document.getElementById(targetTab).classList.remove('hidden');
+
+            if (targetTab === 'history-tab') {
+                renderHistory();
+            }
+        });
+    });
 
     // --- 1. Settings Bootstrapping ---
-    chrome.storage.local.get(['resumeData', 'aiEnabled', 'customAtsAnswers', 'savedProfiles', 'activeProfileName', 'normalizedData', 'resumeFile', 'autoRunActive', 'currentJobIndex', 'totalJobs', 'jobQueue'], (result) => {
-        if (result.aiEnabled) {
-            document.getElementById('aiToggle').checked = true;
-        }
+    chrome.storage.local.get(['resumeData', 'customAtsAnswers', 'savedProfiles', 'activeProfileName', 'normalizedData', 'resumeFile', 'autoRunActive', 'currentJobIndex', 'totalJobs', 'jobQueue', 'applicationHistory'], (result) => {
+        // Settings bootstrapping for non-AI features
         if (result.customAtsAnswers) {
             customAtsAnswers = { ...customAtsAnswers, ...result.customAtsAnswers };
         }
-        updateCustomAnswersTextarea();
+        // updateCustomAnswersTextarea();
 
         if (result.savedProfiles) {
             savedProfiles = result.savedProfiles;
@@ -82,15 +114,19 @@ document.addEventListener('DOMContentLoaded', () => {
             stopQueueBtn.disabled = false;
         }
 
+        if (result.applicationHistory) {
+            applicationHistory = result.applicationHistory;
+        }
+
         renderProfileDropdown();
     });
 
-    // Handle ATS Selector Change
+    // --- 2. Custom ATS Answers Section Removed ---
+    /*
     atsSelector.addEventListener('change', () => {
         updateCustomAnswersTextarea();
     });
 
-    // Handle Custom Answers Save
     saveCustomAnswersBtn.addEventListener('click', () => {
         const selectedAts = atsSelector.value;
         const inputText = customAnswersInput.value.trim();
@@ -115,14 +151,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const data = customAtsAnswers[selectedAts] || {};
         customAnswersInput.value = Object.keys(data).length === 0 ? '' : JSON.stringify(data, null, 2);
     }
+    */
 
-    // Handle AI Toggle
-    const aiToggle = document.getElementById('aiToggle');
-    if (aiToggle) {
-        aiToggle.addEventListener('change', (e) => {
-            chrome.storage.local.set({ aiEnabled: e.target.checked });
-        });
-    }
+
 
     function renderProfileDropdown() {
         const profileNames = Object.keys(savedProfiles);
@@ -207,8 +238,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const reader = new FileReader();
             reader.onload = (e) => {
                 try {
-                    const text = e.target?.result || '';
-                    if (!text) throw new Error('Empty file contents');
+                    const rawText = e.target?.result || '';
+                    if (!rawText) throw new Error('Empty file contents');
+                    // Strip illegal ASCII control characters (0x00–0x08, 0x0B, 0x0C, 0x0E–0x1F)
+                    // that sometimes appear in files generated from Word/PDF/AI tools and are
+                    // invalid inside JSON string values, causing "Bad control character" errors.
+                    const text = rawText.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
                     const json = JSON.parse(text);
                     const normalizedData = ResumeProcessor.normalize(json);
                     let retainedFile = (savedProfiles[newProfileName] && savedProfiles[newProfileName].resumeFile) ? savedProfiles[newProfileName].resumeFile : null;
@@ -218,7 +253,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         renderProfileDropdown();
                     });
                 } catch (error) {
-                    showStatus('Failed to load JSON resume.', 'error');
+                    showStatus(`Failed to load JSON: ${error.message}`, 'error');
                     console.error('Resume upload error:', error);
                 }
             };
@@ -393,15 +428,16 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     fillFormBtn.addEventListener('click', () => {
-        chrome.storage.local.get(['resumeData', 'aiEnabled', 'resumeFile'], (result) => {
+        chrome.storage.local.get(['resumeData', 'resumeFile'], (result) => {
             if (result.resumeData && chrome.tabs) {
                 chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
                     activeTabId = tabs[0]?.id;
                     if (activeTabId) {
+                        const profile = savedProfiles[activeProfileName] || {};
                         chrome.tabs.sendMessage(activeTabId, {
                             action: "fill_form", data: result.resumeData,
                             normalizedData: ResumeProcessor.normalize(result.resumeData),
-                            aiEnabled: result.aiEnabled || false,
+                            manualEdits: profile.manualEdits || {},
                             resumeFile: result.resumeFile,
                             manual: true
                         }, (response) => {
@@ -422,8 +458,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (fieldId && input) editedData.push({ id: fieldId, value: input.value });
             });
             if (activeTabId && editedData.length > 0 && chrome.tabs) {
+                // Save edits to profile
+                if (activeProfileName && savedProfiles[activeProfileName]) {
+                    if (!savedProfiles[activeProfileName].manualEdits) savedProfiles[activeProfileName].manualEdits = {};
+                    editedData.forEach(edit => {
+                        savedProfiles[activeProfileName].manualEdits[edit.id] = edit.value;
+                    });
+                    chrome.storage.local.set({ savedProfiles: savedProfiles });
+                }
+
                 chrome.tabs.sendMessage(activeTabId, { action: 'apply_edits', edits: editedData }, () => {
-                    showStatus('Edits applied!', 'success');
+                    showStatus('Edits applied and saved to profile!', 'success');
                 });
             }
         });
@@ -452,7 +497,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderSummaryTable(reportData) {
-        summaryTableBody.innerHTML = '';
+        // Clear children safely
+        while (summaryTableBody.firstChild) {
+            summaryTableBody.removeChild(summaryTableBody.firstChild);
+        }
+
         if (!reportData || reportData.length === 0) {
             summaryPanelContainer.classList.add('hidden');
             return;
@@ -460,23 +509,44 @@ document.addEventListener('DOMContentLoaded', () => {
         reportData.forEach(item => {
             const tr = document.createElement('tr');
             tr.dataset.fieldid = item.id;
+            tr.dataset.label = item.label;
+
             const tdLabel = document.createElement('td');
+            tdLabel.style.display = 'flex';
+            tdLabel.style.alignItems = 'center';
             tdLabel.textContent = item.label.substring(0, 20) + (item.label.length > 20 ? '...' : '');
+
+            // AI Regenerate Button Removed
+            // tdLabel.appendChild(aiBtn); (removed)
+
             const tdValue = document.createElement('td');
             const input = document.createElement('input');
             input.type = 'text'; input.className = 'edit-input'; input.value = item.value || '';
             tdValue.appendChild(input);
+
             const tdStatus = document.createElement('td');
-            let badge = '';
-            if (item.status === 'filled') badge = `<span class="badge badge-green">${item.confidence}%</span>`;
-            else if (item.status === 'low_confidence') badge = `<span class="badge badge-yellow">${item.confidence}%</span>`;
-            else if (item.status === 'unmatched_required') badge = `<span class="badge badge-red">Missed</span>`;
-            tdStatus.innerHTML = badge;
+            let badgeClass = 'badge-red';
+            let statusText = 'Missed';
+            if (item.status === 'filled') {
+                badgeClass = 'badge-green';
+                statusText = `${item.confidence}%`;
+            } else if (item.status === 'low_confidence') {
+                badgeClass = 'badge-yellow';
+                statusText = `${item.confidence}%`;
+            }
+
+            const badge = document.createElement('span');
+            badge.className = `badge ${badgeClass}`;
+            badge.textContent = statusText;
+            tdStatus.appendChild(badge);
+
             tr.append(tdLabel, tdValue, tdStatus);
             summaryTableBody.appendChild(tr);
         });
         summaryPanelContainer.classList.remove('hidden');
     }
+
+
 
     function showStatus(msg, type) {
         if (!statusDiv) return;
@@ -496,4 +566,50 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!resumeContent) return;
         resumeContent.textContent = JSON.stringify({ _normalized: ResumeProcessor.normalize(data), _raw: data }, null, 2);
     }
+
+    // --- History Functions ---
+    function renderHistory() {
+        if (!applicationHistory || applicationHistory.length === 0) {
+            historyList.innerHTML = '<p style="text-align: center; color: var(--text-muted); font-size: 12px; margin-top: 20px;">No applications logged yet.</p>';
+            return;
+        }
+
+        // Sort by date descending
+        const sortedHistory = [...applicationHistory].sort((a, b) => new Date(b.date) - new Date(a.date));
+
+        historyList.innerHTML = sortedHistory.map(item => `
+            <div class="history-item">
+                <div class="history-item-header">
+                    <p class="history-company">${item.company || 'Unknown Company'}</p>
+                    <span class="history-date">${new Date(item.date).toLocaleDateString()}</span>
+                </div>
+                <p class="history-role">${item.role || 'Job Application'}</p>
+                <div class="history-footer">
+                    <span class="history-status status-${item.status}">${item.status.charAt(0).toUpperCase() + item.status.slice(1)}</span>
+                    <a href="${item.url}" target="_blank" class="history-link">View Job ↗</a>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    clearHistoryBtn.addEventListener('click', () => {
+        if (confirm('Are you sure you want to clear your entire application history?')) {
+            applicationHistory = [];
+            chrome.storage.local.set({ applicationHistory: [] }, () => {
+                renderHistory();
+                showStatus('History cleared.', 'success');
+            });
+        }
+    });
+
+    // Listen for storage changes to refresh history if it's open
+    chrome.storage.onChanged.addListener((changes, namespace) => {
+        if (namespace === 'local' && changes.applicationHistory) {
+            applicationHistory = changes.applicationHistory.newValue || [];
+            if (!document.getElementById('history-tab').classList.contains('hidden')) {
+                renderHistory();
+            }
+        }
+    });
+
 });

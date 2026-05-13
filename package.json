@@ -1,4 +1,8 @@
 {
+  "scripts": {
+    "check": "node --check background.js && node --check content.js && node --check resumeProcessor.js && node --check sidepanel.js",
+    "package": "powershell -ExecutionPolicy Bypass -File .\\package.ps1"
+  },
   "dependencies": {
     "puppeteer": "^24.37.5"
   }

@@ -9,7 +9,7 @@ class WorkableStrategy extends GenericStrategy {
         this.executed = false;
     }
 
-    async execute(normalizedData, aiEnabled, resumeFile = null) {
+    async execute(normalizedData, resumeFile = null) {
         if (!normalizedData) {
             console.error("WorkableStrategy: No resume data provided.");
             return;
@@ -18,7 +18,7 @@ class WorkableStrategy extends GenericStrategy {
         // console.log("Executing WorkableStrategy (Human-like speed)...");
 
         // Basic fallback execution. 
-        await super.execute(normalizedData, aiEnabled, resumeFile);
+        await super.execute(normalizedData, resumeFile);
 
         // Workable is a heavy SPA. The forms are often loaded dynamically.
         // GenericStrategy handles most things, but we can add specific logic here if needed.

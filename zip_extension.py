@@ -1,10 +1,10 @@
 import zipfile
 import os
-import shutil
+import argparse
 
-def create_zip():
-    project_root = os.getcwd()
-    zip_name = "extension.zip"
+def create_zip(source_dir, output_path):
+    project_root = os.path.abspath(source_dir)
+    zip_path = os.path.abspath(output_path)
     
     # Files and folders to include
     includes = [
@@ -16,12 +16,14 @@ def create_zip():
         "sidepanel.js",
         "styles.css",
         "atsStrategies",
-        "icons"
+        "icons",
+        "README.md",
+        "PRIVACY_POLICY.md"
     ]
     
-    print(f"Creating {zip_name}...")
+    print(f"Creating {zip_path} from {project_root}...")
     
-    with zipfile.ZipFile(zip_name, 'w', zipfile.ZIP_DEFLATED) as zipf:
+    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
         for item in includes:
             path = os.path.join(project_root, item)
             if os.path.exists(path):
@@ -39,7 +41,14 @@ def create_zip():
             else:
                 print(f"Warning: {item} not found")
 
-    print(f"Success! {zip_name} created with forward slashes.")
+    print(f"Success! {zip_path} created with forward slashes.")
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Package the extension into a zip file.")
+    parser.add_argument("--source", default=os.getcwd(), help="Directory containing extension files")
+    parser.add_argument("--output", default="extension.zip", help="Output zip path")
+    return parser.parse_args()
 
 if __name__ == "__main__":
-    create_zip()
+    args = parse_args()
+    create_zip(args.source, args.output)

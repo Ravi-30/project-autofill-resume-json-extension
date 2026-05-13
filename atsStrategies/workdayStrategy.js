@@ -8,14 +8,17 @@ class WorkdayStrategy extends GenericStrategy {
         this.CONFIDENCE_THRESHOLD = 70; // Keep standard threshold for workday
     }
 
-    async execute(normalizedData, aiEnabled, resumeFile = null) {
-        // console.log("Executing WorkdayStrategy (Human-like speed)...");
-        await super.execute(normalizedData, aiEnabled, resumeFile);
+    async execute(normalizedData, resumeFile = null) {
+
+        this.executed = true;
+        this.lastExecutedUrl = window.location.href;
+
+        await super.execute(normalizedData, resumeFile);
 
         // Handle Workday-specific custom country dropdowns that GenericStrategy might miss
         this._fillWorkdayCountry(normalizedData);
-
-        // console.log('Workday AutoFill complete!');
+        // Handle Workday's pervasive custom "pseudo-selects"
+        this._handleWorkdayPseudoSelects(normalizedData);
     }
 
     _fillWorkdayCountry(normalizedData) {
@@ -30,18 +33,50 @@ class WorkdayStrategy extends GenericStrategy {
         const countryTriggers = document.querySelectorAll('[data-automation-id*="country"], [aria-label*="country" i]');
 
         countryTriggers.forEach(trigger => {
-            // If it's a button/div that looks like a dropdown trigger
             if (trigger.tagName === 'BUTTON' || trigger.tagName === 'DIV' || trigger.getAttribute('role') === 'button') {
                 const text = (trigger.innerText || "").toLowerCase();
-                // If it's already filled with something that looks like the country, skip
                 if (isUS && (text.includes('united states') || text.includes('usa'))) return;
 
-                // console.log("WorkdayStrategy: Found potential country dropdown trigger:", trigger);
-                // We don't want to click randomly, but we can try to set the value if it's an input inside
                 const input = trigger.querySelector('input') || (trigger.tagName === 'INPUT' ? trigger : null);
                 if (input) {
-                    // console.log("WorkdayStrategy: Setting country input value directly");
                     this.setInputValue(input, isUS ? "United States of America" : country);
+                }
+            }
+        });
+    }
+
+    /**
+     * Workday uses <div> or <button> elements that act as "Select" triggers.
+     * These often have data-automation-id="selectWidget" or similar.
+     */
+    _handleWorkdayPseudoSelects(normalizedData) {
+        const triggers = document.querySelectorAll('[data-automation-id*="selectWidget"], [data-automation-id*="promptIcon"], [role="combobox"]');
+        
+        triggers.forEach(trigger => {
+            const container = trigger.closest('[data-automation-id*="formField"]');
+            if (!container) return;
+
+            const label = container.querySelector('label')?.innerText || "";
+            if (!label) return;
+
+            // Reuse generic value finder by mocking an input
+            const mockInput = {
+                getAttribute: (attr) => attr === 'data-automation-id' ? container.getAttribute('data-automation-id') : null,
+                tagName: 'INPUT',
+                id: '',
+                name: '',
+                closest: () => container
+            };
+
+            const match = this.findValueForInput(mockInput, normalizedData);
+            if (match && match.value) {
+                // To actually "select" in Workday, we usually need to click the trigger
+                // which opens a listbox, then click the item.
+                // However, Workday also has a hidden input or state. 
+                // For a safer "submission-ready" approach, we'll try to set the nested input if visible.
+                const input = trigger.querySelector('input') || container.querySelector('input');
+                if (input && !input.value) {
+                    this.setInputValue(input, match.value);
                 }
             }
         });
@@ -168,7 +203,10 @@ class WorkdayStrategy extends GenericStrategy {
 
             const text = (btn.innerText || btn.value || btn.getAttribute('aria-label') || "").toLowerCase().trim();
             // console.log(`WorkdayStrategy: Clicking submit button: "${text}"`);
-            btn.click();
+            btn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            setTimeout(() => {
+                btn.click();
+            }, 500); // Slight delay for Workday state sync
             return text.includes('submit') || text.includes('finish');
         }
 
@@ -193,20 +231,82 @@ class WorkdayStrategy extends GenericStrategy {
             return null;
         }
 
-        // Common Workday data-automation-ids
-        if (dataAutomationId.includes('legalname-first')) return { value: data.identity.first_name, confidence: 95 };
-        if (dataAutomationId.includes('legalname-last')) return { value: data.identity.last_name, confidence: 95 };
-        if (dataAutomationId.includes('email')) return { value: data.contact.email, confidence: 95 };
-        if (dataAutomationId.includes('phone-number')) return { value: data.contact.phone, confidence: 95 };
-        if (dataAutomationId.includes('address-line1')) return { value: data.contact.address, confidence: 95 };
-        if (dataAutomationId.includes('address-city')) return { value: data.contact.city, confidence: 95 };
-        if (dataAutomationId.includes('address-postal-code')) return { value: data.contact.zip_code, confidence: 95 };
+        const identity = data?.identity || {};
+        const contact = data?.contact || {};
+        const employment = data?.employment?.history?.[0] || {};
+        const education = data?.education?.[0] || {};
 
-        // Specific mappings for Source and Prior Experience
-        if (dataAutomationId.includes('sourceprompt')) return { value: 'Job Search Site', confidence: 95 };
+        // Common Workday data-automation-ids
+        // Common Workday data-automation-ids
+        if (dataAutomationId.includes('first') && dataAutomationId.includes('name')) return { value: identity.first_name, confidence: 95 };
+        if (dataAutomationId.includes('last') && dataAutomationId.includes('name')) return { value: identity.last_name, confidence: 95 };
+        if (dataAutomationId.includes('email')) return { value: contact.email, confidence: 95 };
+        if (dataAutomationId.includes('phone')) return { value: contact.phone, confidence: 95 };
+        if (dataAutomationId.includes('address-line1') || dataAutomationId.includes('addressline1')) return { value: contact.address, confidence: 95 };
+        if (dataAutomationId.includes('address-city') || dataAutomationId.includes('city')) return { value: contact.city, confidence: 95 };
+        if (dataAutomationId.includes('address-postal-code') || dataAutomationId.includes('postal')) return { value: contact.zip_code, confidence: 95 };
+
+        // Dates
+        if (dataAutomationId.includes('date') && (dataAutomationId.includes('start') || dataAutomationId.includes('from'))) return { value: employment.startDate || education.startDate, confidence: 90 };
+        if (dataAutomationId.includes('date') && (dataAutomationId.includes('end') || dataAutomationId.includes('to'))) return { value: employment.endDate || education.endDate, confidence: 90 };
+
+        // Employment Data
+        if (dataAutomationId.includes('jobtitle') || dataAutomationId.includes('title')) return { value: employment.position || " ", confidence: 95, fieldKey: 'employment.current_role' };
+        if (dataAutomationId.includes('company')) return { value: employment.company || employment.name || " ", confidence: 95, fieldKey: 'employment.current_company' };
+        if (dataAutomationId.includes('roledescription') || dataAutomationId.includes('description')) return { value: employment.summary || " ", confidence: 95, fieldKey: 'employment.work_description' };
+
+        // Education Data
+        if (dataAutomationId.includes('school') || dataAutomationId.includes('institution')) return { value: education.institution || " ", confidence: 95, fieldKey: 'education_flat.institution' };
+        if (dataAutomationId.includes('degree')) return { value: education.degree || " ", confidence: 95, fieldKey: 'education_flat.degree' };
+        if (dataAutomationId.includes('fieldofstudy') || dataAutomationId.includes('major')) return { value: education.major || " ", confidence: 95, fieldKey: 'education_flat.major' };
+
+        // Demographics
+        if (dataAutomationId.includes('gender')) return { value: identity.gender, confidence: 95, fieldKey: 'identity.gender' };
+        if (dataAutomationId.includes('ethnicity') || dataAutomationId.includes('race')) return { value: identity.ethnicity, confidence: 95, fieldKey: 'identity.ethnicity' };
+        if (dataAutomationId.includes('hispanic')) return { value: identity.hispanic_latino, confidence: 95, fieldKey: 'identity.hispanic_latino' };
+        if (dataAutomationId.includes('veteran')) return { value: identity.veteran_status, confidence: 95, fieldKey: 'identity.veteran_status' };
+        if (dataAutomationId.includes('disability')) return { value: identity.disability_status, confidence: 95, fieldKey: 'identity.disability_status' };
+
+        // Specific mappings
+        if (dataAutomationId.includes('sourceprompt')) return { value: 'LinkedIn', confidence: 95 };
         if (dataAutomationId.includes('previousemployee')) return { value: 'No', confidence: 95 };
+        if (dataAutomationId.includes('legalright') || dataAutomationId.includes('workauth')) return { value: 'Yes', confidence: 95, fieldKey: 'identity.authorized_to_work' };
+        if (dataAutomationId.includes('requiresponsorship') || dataAutomationId.includes('sponsorship')) return { value: 'No', confidence: 95, fieldKey: 'identity.sponsorship_required' };
+        if (dataAutomationId.includes('relocation')) return { value: identity.relocation_open || 'No', confidence: 90, fieldKey: 'identity.relocation_open' };
+        if (dataAutomationId.includes('noticeperiod')) return { value: identity.notice_period || 'Immediate', confidence: 90, fieldKey: 'identity.notice_period' };
+        if (dataAutomationId.includes('salary') || dataAutomationId.includes('expectation')) return { value: identity.expected_salary || 'Competitive', confidence: 85, fieldKey: 'identity.expected_salary' };
 
         return null;
+    }
+
+    // Workday specific radio handling: labels are often far from inputs or use specific aria classes
+    handleRadioCheckbox(input, data) {
+        const dataAutomationId = (input.getAttribute('data-automation-id') || "").toLowerCase();
+
+        // Check if this input is part of a radio group with a specific value
+        const match = this.findWorkdaySpecificMatch(input, data);
+        if (match && match.value) {
+            const val = String(match.value).toLowerCase();
+            const parent = input.closest('[data-automation-id*="formField"]') || input.parentElement;
+            // Scan for a label that contains our target value
+            const labels = Array.from(parent?.querySelectorAll('label') || []);
+            const targetLabel = labels.find(l => {
+                const text = l.innerText.toLowerCase().trim();
+                return text === val || text.includes(val);
+            });
+
+            if (targetLabel) {
+                // If this specific input's associated label matches our target value, check it
+                const inputLabel = this.getLabelText(input).toLowerCase();
+                if (inputLabel.includes(val) || val.includes(inputLabel)) {
+                    input.checked = true;
+                    this.setInputValue(input, null, 'green');
+                    return;
+                }
+            }
+        }
+
+        super.handleRadioCheckbox(input, data);
     }
 }
 
