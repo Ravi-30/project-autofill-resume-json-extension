@@ -34,8 +34,31 @@ chrome.runtime.onConnect.addListener((port) => {
     });
   }
 });
-chrome.runtime.onInstalled.addListener(() => {
 
+// Auto-open side panel on job sites
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete' && tab.url) {
+    const url = tab.url.toLowerCase();
+    const jobBoards = [
+      'greenhouse.io', 'lever.co', 'myworkdayjobs.com', 'workday.com', 
+      'smartrecruiters.com', 'applytojob.com', 'ashbyhq.com', 'bamboohr.com',
+      'icims.com', 'indeed.com', 'linkedin.com/jobs', 'workable.com',
+      'taleo.net', 'successfactors.com', 'personio.com', 'recruitee.com',
+      'teamtailor.com', 'ultipro.com', 'ukg.com', 'paycomonline.net',
+      'paychex.com', 'oraclecloud.com', 'brassring.com', 'adp.com',
+      'jobvite.com', 'rippling-ats.com'
+    ];
+
+    const isJobSite = jobBoards.some(board => url.includes(board));
+    if (isJobSite && !openSidePanelWindows.has(tab.windowId)) {
+      chrome.sidePanel.open({ windowId: tab.windowId }).catch(err => {
+        console.error("Failed to auto-open sidepanel:", err);
+      });
+    }
+  }
+});
+
+chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     id: "openSidePanel",
     title: "Open Side Panel",
@@ -53,13 +76,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === "openSidePanel") {
     chrome.sidePanel.open({ tabId: tab.id });
   } else if (info.menuItemId === "forceFillData") {
-    // Retrieve resume data and send to content script
-    chrome.storage.local.get(['resumeData', 'resumeFile'], (result) => {
+    chrome.storage.local.get(['resumeData', 'normalizedData', 'resumeFile'], (result) => {
       if (result.resumeData) {
         chrome.tabs.sendMessage(tab.id, {
           action: "fill_form",
           data: result.resumeData,
-          normalizedData: ResumeProcessor.normalize(result.resumeData),
+          normalizedData: result.normalizedData || ResumeProcessor.normalize(result.resumeData),
           resumeFile: result.resumeFile,
           manual: true
         });
@@ -104,8 +126,6 @@ function logApplicationSubmission(url) {
 
     if (pending[hostname]) {
       const data = pending[hostname];
-
-      // Prevent duplicate submissions for the same job in a short window
       const oneMinuteAgo = Date.now() - 60 * 1000;
       const isDuplicate = history.some(item =>
         item.url === data.url &&
@@ -118,12 +138,9 @@ function logApplicationSubmission(url) {
           status: 'submitted',
           date: new Date().toISOString()
         });
-
         if (history.length > 50) history = history.slice(-50);
         chrome.storage.local.set({ applicationHistory: history });
       }
-
-      // Clear pending for this host
       delete pending[hostname];
       chrome.storage.local.set({ pendingSubmissions: pending });
     }

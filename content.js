@@ -146,13 +146,25 @@ function checkSuccessPage() {
 }
 
 async function fillForm(data, manual = false, resume = null) {
+    let counts = { filled: 0, total: 0 };
     try {
         const strategy = ATSStrategyRegistry.getStrategy(window.location.href, document);
-        if (strategy) await strategy.execute(data, resume);
+        if (strategy) {
+            counts = await strategy.execute(data, resume) || counts;
+        }
     } catch (err) { /* silent error for generic strategy */ }
 
     const meta = extractJobMetadata();
-    chrome.runtime.sendMessage({ action: 'log_fill', data: { url: window.location.href, company: meta.company, role: meta.role } });
+    chrome.runtime.sendMessage({ 
+        action: 'log_fill', 
+        data: { 
+            url: window.location.href, 
+            company: meta.company, 
+            role: meta.role,
+            filled: counts.filled,
+            total: counts.total
+        } 
+    });
 }
 
 

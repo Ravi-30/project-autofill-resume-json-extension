@@ -337,22 +337,8 @@ class GenericStrategy {
         handleAddButtons();
 
         const inputs = document.querySelectorAll('input, textarea, select');
-
-        // Log first few inputs for debugging
         let fillCount = 0;
-        Array.from(inputs).slice(0, 10).forEach((input, idx) => {
-            const type = input.type || input.tagName;
-            const name = input.name || input.id || '(unnamed)';
-            const value = input.value?.substring(0, 30) || '(empty)';
-            const hidden = input.getAttribute('type') === 'hidden' ? ' [HIDDEN]' : '';
-            const disabled = input.disabled ? ' [DISABLED]' : '';
-            // 
-        });
-        // 
-
-
-
-        // Track field groups to avoid filling the same entry multiple times
+        let totalInteractable = 0;
         let educationGroupTracker = new Map();
         let employmentGroupTracker = new Map();
 
@@ -360,38 +346,35 @@ class GenericStrategy {
             // Allow hidden fields if they have a name or id (likely state holders for custom dropdowns)
             if (input.type === 'hidden' && !input.id && !input.name && !input.getAttribute('data-automation-id')) continue;
             if (input.disabled || input.readOnly) continue;
-
-            // Skip fields the user has manually edited — their corrections are sacred.
-            // The 'afUserLocked' flag is set by the isTrusted listener in content.js.
-            if (input.dataset.afUserLocked === 'true') continue;
-
-            // Skip inputs that are already filled — prevents re-triggering confidence popups
-            // on second pass (e.g. from MutationObserver after initial fill)
-            if (input.value && input.value.trim() !== '') continue;
-
-            // Skip Select2-hidden selects — they are enhanced custom dropdowns whose visual
-            // layer is controlled by Select2/jQuery. Setting their value directly won't update
-            // the UI. Platform-specific strategies (e.g. GreenhouseStrategy) handle these.
+            
+            // Skip Select2-hidden selects
             if (
                 input.tagName === 'SELECT' &&
                 (input.classList.contains('select2-hidden-accessible') ||
                     input.getAttribute('aria-hidden') === 'true' && input.style.display === 'none')
             ) continue;
 
+            totalInteractable++;
+
+            // Skip fields the user has manually edited
+            if (input.dataset.afUserLocked === 'true') continue;
+
             // Handle Radio/Checkbox
             if (input.type === 'radio' || input.type === 'checkbox') {
                 this.handleRadioCheckbox(input, normalizedData);
+                if (input.checked) fillCount++;
+                continue;
+            }
+
+            // Skip inputs that are already filled (unless forced)
+            if (input.value && input.value.trim() !== '') {
+                fillCount++;
                 continue;
             }
 
             let match = this.findValueForInput(input, normalizedData);
 
-            // SPECIAL CASE: If we matched 'middle_name' but value is empty, 
-            // DO NOT let it fall back or re-match to 'full_name' later.
             if (match && match.fieldKey === 'identity.middle_name' && !match.value) {
-                // This prevents the full_name fallback for middle name fields
-                match = null;
-                // However, we want to skip filling it with anything else
                 continue;
             }
 
@@ -422,7 +405,7 @@ class GenericStrategy {
                             }
                         });
 
-                        // 2. Name-based Index (e.g., degree_0, company_1)
+                        // 2. Name-based Index
                         if (bestIdx === -1) {
                             const indexMatch = (input.name || "").match(/\d+/);
                             if (indexMatch) {
@@ -450,61 +433,42 @@ class GenericStrategy {
                         if (bestIdx !== -1) {
                             const subKey = match.fieldKey.split('.')[1];
                             if (isEdu) {
-                                const eduKeyMap = {
-                                    'major': 'area',
-                                    'start_date': 'startDate',
-                                    'end_date': 'endDate'
-                                };
+                                const eduKeyMap = { 'major': 'area', 'start_date': 'startDate', 'end_date': 'endDate' };
                                 const targetKey = eduKeyMap[subKey] || subKey;
-                                match.value = sourceData[bestIdx][targetKey] ||
-                                    sourceData[bestIdx][subKey] ||
-                                    sourceData[bestIdx].degree ||
-                                    sourceData[bestIdx].major ||
-                                    "";
+                                match.value = sourceData[bestIdx][targetKey] || sourceData[bestIdx][subKey] || sourceData[bestIdx].degree || sourceData[bestIdx].major || "";
                             } else {
-                                const empKeyMap = {
-                                    'current_role': 'position',
-                                    'current_company': 'name',
-                                    'work_description': 'summary',
-                                    'start_date': 'startDate',
-                                    'end_date': 'endDate'
-                                };
+                                const empKeyMap = { 'current_role': 'position', 'current_company': 'name', 'work_description': 'summary', 'start_date': 'startDate', 'end_date': 'endDate' };
                                 const targetKey = empKeyMap[subKey] || subKey;
-                                // Expand lookup to common keys
-                                match.value = sourceData[bestIdx][targetKey] ||
-                                    sourceData[bestIdx][subKey] ||
-                                    sourceData[bestIdx].company ||
-                                    sourceData[bestIdx].title ||
-                                    "";
+                                match.value = sourceData[bestIdx][targetKey] || sourceData[bestIdx][subKey] || sourceData[bestIdx].company || sourceData[bestIdx].title || "";
                             }
                             match.confidence = 95;
                         }
                     }
                 }
 
-
-
                 if (match && match.value) {
-                    // Silent skip: if confidence is too low, don't fill
-                    const SILENT_SKIP_THRESHOLD = 40;
                     if (match.confidence >= this.CONFIDENCE_THRESHOLD) {
                         this.setInputValue(input, match.value, 'green');
                         fillCount++;
                     }
                 } else {
-                    // Check if it's a required field that was missed
                     if (input.required || input.getAttribute('aria-required') === 'true') {
                         this.highlightUnmatchedRequired(input);
                     }
                 }
 
-                // --- Human-like Delay ---
-                // Randomized delay between 200ms and 700ms to mimic typing/moving between fields
                 if (match && match.confidence >= this.CONFIDENCE_THRESHOLD) {
-                    await this.sleep(Math.floor(Math.random() * 500) + 200);
+                    await this.sleep(Math.floor(Math.random() * 200) + 100);
                 }
             }
         }
+
+        // Report progress to side panel
+        if (typeof chrome !== 'undefined' && chrome.runtime?.id) {
+            chrome.runtime.sendMessage({ action: 'update_progress', filled: fillCount, total: totalInteractable });
+        }
+
+        return { filled: fillCount, total: totalInteractable };
     }
 
     findCustomAnswer(input, hostname, customAtsAnswers) {
