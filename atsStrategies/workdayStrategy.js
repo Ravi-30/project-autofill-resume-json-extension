@@ -169,50 +169,6 @@ class WorkdayStrategy extends GenericStrategy {
         return super.handleInitialEntry();
     }
 
-    autoSubmit() {
-        // console.log("WorkdayStrategy: Looking for submit button...");
-
-        // Workday typically uses "Next", "Continue", or sometimes "Apply Now"
-        const submitPatterns = ['next', 'continue', 'submit', 'submit application', 'apply now', 'save and continue', 'finish'];
-
-        // Get all button elements
-        const allButtons = Array.from(document.querySelectorAll('button, [role="button"], a[role="button"], input[type="submit"]'));
-
-        // Filter to visible buttons with submit-like text
-        const submitButtons = allButtons.filter(btn => {
-            if (btn.disabled || btn.offsetParent === null) return false;
-
-            const text = (btn.innerText || btn.value || btn.getAttribute('aria-label') || "").toLowerCase().trim();
-            const dataId = (btn.getAttribute('data-automation-id') || "").toLowerCase();
-
-            // Match against pattern (prefer "next" and "continue" for Workday)
-            return submitPatterns.some(p => text === p || text.includes(p) || dataId.includes(p));
-        });
-
-        // console.log("WorkdayStrategy: Found", submitButtons.length, "potential submit buttons");
-
-        if (submitButtons.length > 0) {
-            // Priority: "Submit" > "Next" > "Continue"
-            const btn = submitButtons.find(b => {
-                const text = (b.innerText || b.value || b.getAttribute('aria-label') || "").toLowerCase().trim();
-                return text.includes('submit');
-            }) || submitButtons.find(b => {
-                const text = (b.innerText || b.value || b.getAttribute('aria-label') || "").toLowerCase().trim();
-                return text === 'next' || text === 'continue';
-            }) || submitButtons[0];
-
-            const text = (btn.innerText || btn.value || btn.getAttribute('aria-label') || "").toLowerCase().trim();
-            // console.log(`WorkdayStrategy: Clicking submit button: "${text}"`);
-            btn.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            setTimeout(() => {
-                btn.click();
-            }, 500); // Slight delay for Workday state sync
-            return text.includes('submit') || text.includes('finish');
-        }
-
-        // console.log("WorkdayStrategy: No submit button found, falling back to generic");
-        return super.autoSubmit();
-    }
 
     findValueForInput(input, normalizedData) {
         let match = this.findWorkdaySpecificMatch(input, normalizedData);

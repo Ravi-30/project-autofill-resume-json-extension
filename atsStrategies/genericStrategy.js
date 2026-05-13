@@ -351,8 +351,6 @@ class GenericStrategy {
         // 
 
 
-        // This array will hold the report data for the side panel
-        let fillReport = [];
 
         // Track field groups to avoid filling the same entry multiple times
         let educationGroupTracker = new Map();
@@ -486,61 +484,26 @@ class GenericStrategy {
 
 
 
-                let status = 'unmatched';
-                let finalValue = '';
-
                 if (match && match.value) {
-                    // Silent skip: if confidence is too low, don't fill AND don't show a popup
+                    // Silent skip: if confidence is too low, don't fill
                     const SILENT_SKIP_THRESHOLD = 40;
-                    if (match.confidence < SILENT_SKIP_THRESHOLD) {
-                        // Too low to be useful — ignore silently
-                    } else if (match.confidence >= this.CONFIDENCE_THRESHOLD) {
-                        // }..."`);
+                    if (match.confidence >= this.CONFIDENCE_THRESHOLD) {
                         this.setInputValue(input, match.value, 'green');
-                        status = 'filled';
-                        finalValue = match.value;
                         fillCount++;
-                    } else {
-                        // : ${input.name || input.id || '?'} = "${match.value?.substring(0, 40)}..."`);
-                        this.promptUserConfirmation(input, match.value, match.confidence);
-                        status = 'low_confidence';
-                        finalValue = match.value; // It is suggested, though not explicitly set yet
                     }
                 } else {
                     // Check if it's a required field that was missed
                     if (input.required || input.getAttribute('aria-required') === 'true') {
-
                         this.highlightUnmatchedRequired(input);
-                        status = 'unmatched_required';
                     }
-                }
-
-                // Only add to report if it's an actionable or matched field
-                if (status !== 'unmatched') {
-                    const labelText = this.getLabelText(input) || input.name || input.id || input.placeholder || "Unknown Field";
-                    fillReport.push({
-                        id: input.id || input.name || Math.random().toString(36).substr(2, 9),
-                        label: labelText,
-                        value: finalValue,
-                        confidence: match ? match.confidence : 0,
-                        status: status
-                    });
                 }
 
                 // --- Human-like Delay ---
                 // Randomized delay between 200ms and 700ms to mimic typing/moving between fields
-                if (status === 'filled') {
+                if (match && match.confidence >= this.CONFIDENCE_THRESHOLD) {
                     await this.sleep(Math.floor(Math.random() * 500) + 200);
                 }
             }
-        }
-
-        // Send the fill report to the sidepanel once, after all fields are processed
-        if (fillReport.length > 0) {
-            chrome.runtime.sendMessage({
-                action: 'fill_report',
-                report: fillReport
-            });
         }
     }
 
@@ -999,180 +962,6 @@ class GenericStrategy {
 
     highlightUnmatchedRequired(input) {
         this.setInputValue(input, null, 'red');
-    }
-
-    promptUserConfirmation(input, suggestion, confidence) {
-        // Deduplication guard: only show one popup per input element
-        if (input.dataset.afPopup === 'shown') return;
-        input.dataset.afPopup = 'shown';
-
-        const originalBorder = input.style.border;
-        const originalBackground = input.style.backgroundColor;
-
-        input.style.border = "2px solid #f59e0b";
-        input.style.backgroundColor = "#fffbeb";
-
-        const container = document.createElement('div');
-        container.style.position = 'absolute';
-        container.style.zIndex = '999999';
-        container.style.backgroundColor = '#ffffff';
-        container.style.border = '1px solid #d1d5db';
-        container.style.borderRadius = '4px';
-        container.style.padding = '8px';
-        container.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1)';
-        container.style.display = 'flex';
-        container.style.flexDirection = 'column';
-        container.style.gap = '4px';
-        container.style.fontSize = '12px';
-        container.style.fontFamily = 'system-ui, sans-serif';
-        container.style.color = '#374151';
-
-        const info = document.createElement('div');
-        info.innerHTML = `<strong>Suggested:</strong> ${suggestion}<br/><span style="color: #6b7280; font-size: 10px;">Confidence: ${confidence}%</span>`;
-
-        const buttonRow = document.createElement('div');
-        buttonRow.style.display = 'flex';
-        buttonRow.style.gap = '4px';
-        buttonRow.style.marginTop = '4px';
-
-        const acceptBtn = document.createElement('button');
-        acceptBtn.innerHTML = '✓ Accept';
-        acceptBtn.style.padding = '2px 8px';
-        acceptBtn.style.backgroundColor = '#10b981';
-        acceptBtn.style.color = 'white';
-        acceptBtn.style.border = 'none';
-        acceptBtn.style.borderRadius = '2px';
-        acceptBtn.style.cursor = 'pointer';
-
-        const rejectBtn = document.createElement('button');
-        rejectBtn.innerHTML = '✗ Reject';
-        rejectBtn.style.padding = '2px 8px';
-        rejectBtn.style.backgroundColor = '#ef4444';
-        rejectBtn.style.color = 'white';
-        rejectBtn.style.border = 'none';
-        rejectBtn.style.borderRadius = '2px';
-        rejectBtn.style.cursor = 'pointer';
-
-        buttonRow.appendChild(acceptBtn);
-        buttonRow.appendChild(rejectBtn);
-        container.appendChild(info);
-        container.appendChild(buttonRow);
-
-        const rect = input.getBoundingClientRect();
-        container.style.top = `${window.scrollY + rect.bottom + 4}px`;
-        container.style.left = `${window.scrollX + rect.left}px`;
-
-        document.body.appendChild(container);
-
-        const cleanup = () => {
-            container.remove();
-            input.style.border = originalBorder;
-            input.style.backgroundColor = originalBackground;
-            delete input.dataset.afPopup; // Allow popup to reappear if user manually triggers
-        };
-
-        acceptBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            this.setInputValue(input, suggestion);
-            cleanup();
-        });
-
-        rejectBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            cleanup();
-        });
-    }
-
-
-    /**
-     * Attempts to automatically submit the form by finding and clicking a Submit/Next button.
-     */
-    autoSubmit() {
-        // Prioritize buttons that clearly indicate submission/progression
-        // Start with "Next" and "Continue" which are less ambiguous than "Apply"
-        const submitPatterns = [
-            'submit application', 'submit', 'send application', 'finish',
-            'next', 'continue', 'save and continue', 'next step', 'go to next step',
-            'apply now', 'apply', 'apply for'
-        ];
-
-        // Look for typical submit buttons
-        const buttons = Array.from(document.querySelectorAll('button[type="submit"], button, input[type="submit"], a.btn, a[role="button"], span.btn, .button, .btn'));
-
-        // Filter and sort: prioritize buttons that are clearly submission buttons
-        const eligibleButtons = buttons.filter(btn => {
-            // Skip visually hidden or disabled buttons
-            if (btn.disabled || btn.offsetParent === null) return false;
-
-            const text = (btn.innerText || btn.value || btn.getAttribute('aria-label') || "").toLowerCase().trim();
-
-            // Skip empty buttons
-            if (!text) return false;
-
-            // Skip very short buttons (likely icons or minor controls)
-            if (text.length < 2) return false;
-
-            // Match against submit patterns
-            return submitPatterns.some(p => text === p || text.startsWith(p));
-        });
-
-        // Score buttons based on how specific their text is
-        const score = (text) => {
-            if (text === 'submit application') return 100;
-            if (text === 'submit') return 95;
-            if (text === 'send application') return 92;
-            if (text === 'finish') return 90;
-            if (text === 'next') return 80;
-            if (text === 'continue') return 75;
-            if (text === 'save and continue') return 72;
-            if (text === 'next step') return 70;
-            if (text.includes('apply') && text.includes('now')) return 60;
-            if (text.includes('apply') && text.includes('for')) return 55;
-            return 0;
-        };
-
-        // Prioritize by pattern strength
-        eligibleButtons.sort((a, b) => {
-            const textA = (a.innerText || a.value || a.getAttribute('aria-label') || "").toLowerCase().trim();
-            const textB = (b.innerText || b.value || b.getAttribute('aria-label') || "").toLowerCase().trim();
-
-            // Boost buttons with type="submit"
-            let scoreA = score(textA);
-            let scoreB = score(textB);
-
-            if (a.getAttribute('type') === 'submit') scoreA += 10;
-            if (b.getAttribute('type') === 'submit') scoreB += 10;
-
-            return scoreB - scoreA;
-        });
-
-        if (eligibleButtons.length > 0) {
-            const btn = eligibleButtons[0];
-            const text = (btn.innerText || btn.value || btn.getAttribute('aria-label') || "").toLowerCase().trim();
-            // `);
-
-            // Fast-track: Some forms have a required consent checkbox right before submission that was missed
-            const requiredCheckboxes = document.querySelectorAll('input[type="checkbox"][required], input[type="checkbox"][aria-required="true"]');
-            requiredCheckboxes.forEach(cb => {
-                if (!cb.checked) {
-                    // 
-                    cb.checked = true;
-                    ['change', 'input', 'click'].forEach(e => cb.dispatchEvent(new Event(e, { bubbles: true })));
-                }
-            });
-
-            // Score the text to see if we believe this was a final SUBMIT button
-            const finalScore = score(text);
-
-            // Execute the click
-            btn.click();
-
-            // Return true if it was likely a final submission (score >= 90)
-            return finalScore >= 90;
-        }
-
-        // 
-        return false;
     }
 }
 

@@ -21,29 +21,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const resumeContent = document.getElementById('resumeContent');
     const profileSelect = document.getElementById('profileSelect');
     const deleteProfileBtn = document.getElementById('deleteProfileBtn');
-    const nextPageBtn = document.getElementById('nextPageBtn');
+
 
     // History Tab Elements
     const historyList = document.getElementById('historyList');
     const clearHistoryBtn = document.getElementById('clearHistoryBtn');
 
-    // Summary Panel Elements
-    const summaryPanelContainer = document.getElementById('summaryPanelContainer');
-    const summaryTableBody = document.getElementById('summaryTableBody');
-    const applyEditsBtn = document.getElementById('applyEditsBtn');
+
 
     // const atsSelector = document.getElementById('atsSelector');
     // const customAnswersInput = document.getElementById('customAnswersInput');
     // const saveCustomAnswersBtn = document.getElementById('saveCustomAnswersBtn');
 
-    // Auto-Apply Queue Elements
-    const jobsInput = document.getElementById('jobsInput');
-    const jobsFileName = document.getElementById('jobsFileName');
-    const startQueueBtn = document.getElementById('startQueueBtn');
-    const stopQueueBtn = document.getElementById('stopQueueBtn');
-    const queueStatus = document.getElementById('queueStatus');
 
-    // Keep track of the current tab ID logic executes on 
+
     let activeTabId = null;
     let customAtsAnswers = {
         Generic: {}, Greenhouse: {}, Lever: {}, Workday: {}, SuccessFactors: {},
@@ -55,7 +46,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let savedProfiles = {};
     let activeProfileName = null;
-    let autoApplyJobs = [];
+
     let applicationHistory = [];
 
     // --- 0. Tab Switching Logic ---
@@ -80,7 +71,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // --- 1. Settings Bootstrapping ---
-    chrome.storage.local.get(['resumeData', 'customAtsAnswers', 'savedProfiles', 'activeProfileName', 'normalizedData', 'resumeFile', 'autoRunActive', 'currentJobIndex', 'totalJobs', 'jobQueue', 'applicationHistory'], (result) => {
+    chrome.storage.local.get(['resumeData', 'customAtsAnswers', 'savedProfiles', 'activeProfileName', 'normalizedData', 'resumeFile', 'applicationHistory'], (result) => {
         // Settings bootstrapping for non-AI features
         if (result.customAtsAnswers) {
             customAtsAnswers = { ...customAtsAnswers, ...result.customAtsAnswers };
@@ -107,12 +98,7 @@ document.addEventListener('DOMContentLoaded', () => {
             chrome.storage.local.set({ activeProfileName: activeProfileName });
         }
 
-        if (result.autoRunActive) {
-            autoApplyJobs = result.jobQueue || [];
-            queueStatus.textContent = `Processing job ${(result.currentJobIndex || 0) + 1} of ${(result.totalJobs || result.jobQueue?.length || 0)}...`;
-            startQueueBtn.disabled = true;
-            stopQueueBtn.disabled = false;
-        }
+
 
         if (result.applicationHistory) {
             applicationHistory = result.applicationHistory;
@@ -283,149 +269,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    if (jobsInput) {
-        jobsInput.addEventListener('change', (event) => {
-            const file = event.target.files[0];
-            if (!file) return;
-            if (!file.name.toLowerCase().endsWith('.json')) {
-                showStatus('Please choose a .json file for jobs', 'error');
-                return;
-            }
-            jobsFileName.textContent = `📎 ${file.name}`;
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                try {
-                    const text = e.target?.result || '';
-                    if (!text) throw new Error('Empty file contents');
-                    let json = JSON.parse(text);
-                    if (json && !Array.isArray(json)) {
-                        if (json.basics || json.work || json.education || json.skills) {
-                            throw new Error('This looks like a Resume! Upload to Resume Profile Manager.');
-                        }
-                        if (json.by_ats) {
-                            let flattened = [];
-                            for (const platform in json.by_ats) {
-                                (json.by_ats[platform] || []).forEach(job => {
-                                    if (job.ats_url) {
-                                        let company = "Unknown";
-                                        if (job.title) {
-                                            const parts = job.title.split('\n');
-                                            company = parts.length >= 6 ? parts[5].trim() : (parts.length >= 1 ? parts[0].trim() : "Unknown");
-                                        }
-                                        flattened.push({ url: job.ats_url, company });
-                                    }
-                                });
-                            }
-                            json = flattened;
-                        } else if (Array.isArray(json.jobs)) {
-                            json = json.jobs;
-                        }
-                    }
-                    if (!Array.isArray(json)) throw new Error('Jobs file must be an array of objects.');
-                    autoApplyJobs = json;
-                    startQueueBtn.disabled = autoApplyJobs.length === 0;
-                    queueStatus.textContent = `Loaded ${autoApplyJobs.length} jobs.`;
-                    // console.log("SidePanel: Jobs loaded successfully. Total:", autoApplyJobs.length);
-                    showStatus('Jobs loaded successfully', 'success');
-                    if (autoApplyJobs.length > 0) {
-                        if (activeProfileName) {
-                            queueStatus.textContent = 'Auto-starting queue in 1s...';
-                            // console.log("SidePanel: Auto-starting queue because profile is active:", activeProfileName);
-                            setTimeout(() => {
-                                // console.log("SidePanel: Triggering startQueueBtn click");
-                                startQueueBtn.click();
-                            }, 1000);
-                        } else {
-                            queueStatus.textContent = 'Blocked: Pick a Resume Profile.';
-                            // console.log("SidePanel: Queue auto-start blocked: no active profile");
-                            showStatus('Please pick a Resume Profile to begin.', 'error');
-                        }
-                    }
-                } catch (error) {
-                    showStatus('Invalid jobs JSON.', 'error');
-                    console.error('Jobs JSON Parse Error:', error);
-                }
-            };
-            reader.readAsText(file);
-        });
-    }
 
-    if (startQueueBtn) {
-        startQueueBtn.addEventListener('click', () => {
-            // console.log("SidePanel: startQueueBtn clicked. jobs.length:", autoApplyJobs.length, "profile:", activeProfileName);
-            if (!activeProfileName) {
-                showStatus('Please upload or select a resume profile first.', 'error');
-                return;
-            }
-            if (autoApplyJobs.length === 0) {
-                console.warn("SidePanel: startQueueBtn clicked but autoApplyJobs is empty");
-                return;
-            }
-            if (!savedProfiles[activeProfileName]?.normalizedData) {
-                showStatus('Resume profile missing data.', 'error');
-                console.warn("SidePanel: Active profile missing normalizedData");
-                return;
-            }
-            chrome.storage.local.set({
-                activeProfileName: activeProfileName,
-                resumeData: savedProfiles[activeProfileName].resumeData,
-                normalizedData: savedProfiles[activeProfileName].normalizedData,
-                resumeFile: savedProfiles[activeProfileName].resumeFile
-            }, () => {
-                // console.log("SidePanel: Profile data saved to storage. Pinging background...");
-                chrome.runtime.sendMessage({ action: 'ping' }, (response) => {
-                    if (chrome.runtime.lastError) {
-                        showStatus('Connecting to extension...', 'error');
-                        console.error("SidePanel: Ping failed:", chrome.runtime.lastError);
-                        return;
-                    }
-                    // console.log("SidePanel: Ping success. Sending start_queue with", autoApplyJobs.length, "jobs");
-                    chrome.runtime.sendMessage({ action: 'start_queue', jobs: autoApplyJobs }, (response) => {
-                        if (chrome.runtime.lastError) {
-                            showStatus('Error starting queue.', 'error');
-                            console.error("SidePanel: start_queue failed:", chrome.runtime.lastError);
-                        } else {
-                            startQueueBtn.disabled = true;
-                            stopQueueBtn.disabled = false;
-                            showStatus('Queue Started', 'success');
-                            // console.log("SidePanel: Queue start acknowledged by background");
-                        }
-                    });
-                });
-            });
-        });
-    }
 
-    if (stopQueueBtn) {
-        stopQueueBtn.addEventListener('click', () => {
-            chrome.runtime.sendMessage({ action: 'stop_queue' }, (response) => {
-                if (!chrome.runtime.lastError) {
-                    startQueueBtn.disabled = false;
-                    stopQueueBtn.disabled = true;
-                    showStatus('Queue Stopped', 'success');
-                }
-            });
-        });
-    }
 
-    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-        if (request.action === 'queue_status_update') {
-            if (request.data.status === 'running') {
-                queueStatus.textContent = `Processing job ${request.data.currentIndex + 1} of ${request.data.totalJobs}...`;
-                startQueueBtn.disabled = true;
-                stopQueueBtn.disabled = false;
-            } else if (request.data.status === 'stopped' || request.data.status === 'completed') {
-                queueStatus.textContent = request.data.status === 'completed' ? 'Queue Completed!' : 'Queue Stopped.';
-                startQueueBtn.disabled = false;
-                stopQueueBtn.disabled = true;
-            }
-        }
-        if (request.action === 'fill_report') {
-            activeTabId = sender.tab.id;
-            renderSummaryTable(request.report);
-            sendResponse({ status: 'ok' });
-        }
-    });
 
     fillFormBtn.addEventListener('click', () => {
         chrome.storage.local.get(['resumeData', 'resumeFile'], (result) => {
@@ -449,30 +295,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    if (applyEditsBtn) {
-        applyEditsBtn.addEventListener('click', () => {
-            const editedData = [];
-            summaryTableBody.querySelectorAll('tr').forEach(row => {
-                const fieldId = row.dataset.fieldid;
-                const input = row.querySelector('.edit-input');
-                if (fieldId && input) editedData.push({ id: fieldId, value: input.value });
-            });
-            if (activeTabId && editedData.length > 0 && chrome.tabs) {
-                // Save edits to profile
-                if (activeProfileName && savedProfiles[activeProfileName]) {
-                    if (!savedProfiles[activeProfileName].manualEdits) savedProfiles[activeProfileName].manualEdits = {};
-                    editedData.forEach(edit => {
-                        savedProfiles[activeProfileName].manualEdits[edit.id] = edit.value;
-                    });
-                    chrome.storage.local.set({ savedProfiles: savedProfiles });
-                }
-
-                chrome.tabs.sendMessage(activeTabId, { action: 'apply_edits', edits: editedData }, () => {
-                    showStatus('Edits applied and saved to profile!', 'success');
-                });
-            }
-        });
-    }
 
     if (viewResumeBtn) {
         viewResumeBtn.addEventListener('click', () => {
@@ -482,71 +304,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-
-    if (nextPageBtn) {
-        nextPageBtn.addEventListener('click', () => {
-            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-                const activeTabId = tabs[0]?.id;
-                if (activeTabId) {
-                    chrome.tabs.sendMessage(activeTabId, { action: "auto_submit" }, (response) => {
-                        showStatus(chrome.runtime.lastError ? 'Error.' : 'Triggered!', chrome.runtime.lastError ? 'error' : 'success');
-                    });
-                }
-            });
-        });
-    }
-
-    function renderSummaryTable(reportData) {
-        // Clear children safely
-        while (summaryTableBody.firstChild) {
-            summaryTableBody.removeChild(summaryTableBody.firstChild);
-        }
-
-        if (!reportData || reportData.length === 0) {
-            summaryPanelContainer.classList.add('hidden');
-            return;
-        }
-        reportData.forEach(item => {
-            const tr = document.createElement('tr');
-            tr.dataset.fieldid = item.id;
-            tr.dataset.label = item.label;
-
-            const tdLabel = document.createElement('td');
-            tdLabel.style.display = 'flex';
-            tdLabel.style.alignItems = 'center';
-            tdLabel.textContent = item.label.substring(0, 20) + (item.label.length > 20 ? '...' : '');
-
-            // AI Regenerate Button Removed
-            // tdLabel.appendChild(aiBtn); (removed)
-
-            const tdValue = document.createElement('td');
-            const input = document.createElement('input');
-            input.type = 'text'; input.className = 'edit-input'; input.value = item.value || '';
-            tdValue.appendChild(input);
-
-            const tdStatus = document.createElement('td');
-            let badgeClass = 'badge-red';
-            let statusText = 'Missed';
-            if (item.status === 'filled') {
-                badgeClass = 'badge-green';
-                statusText = `${item.confidence}%`;
-            } else if (item.status === 'low_confidence') {
-                badgeClass = 'badge-yellow';
-                statusText = `${item.confidence}%`;
-            }
-
-            const badge = document.createElement('span');
-            badge.className = `badge ${badgeClass}`;
-            badge.textContent = statusText;
-            tdStatus.appendChild(badge);
-
-            tr.append(tdLabel, tdValue, tdStatus);
-            summaryTableBody.appendChild(tr);
-        });
-        summaryPanelContainer.classList.remove('hidden');
-    }
-
-
 
     function showStatus(msg, type) {
         if (!statusDiv) return;
@@ -559,7 +316,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function enableButtons() {
         if (fillFormBtn) fillFormBtn.disabled = false;
         if (viewResumeBtn) viewResumeBtn.disabled = false;
-        if (nextPageBtn) nextPageBtn.disabled = false;
+
     }
 
     function updatePreview(data) {

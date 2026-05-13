@@ -13,30 +13,6 @@ class AdpStrategy extends GenericStrategy {
         await super.execute(normalizedData, resumeFile);
     }
 
-    autoSubmit() {
-        // ADP specific next/continue buttons
-        const submitPatterns = ['next', 'continue', 'save & continue', 'save and continue', 'submit'];
-        const allButtons = Array.from(document.querySelectorAll('button, [role="button"], input[type="button"], input[type="submit"]'));
-
-        const submitButtons = allButtons.filter(btn => {
-            if (btn.disabled || btn.offsetParent === null) return false;
-            const text = (btn.innerText || btn.value || "").toLowerCase().trim();
-            return submitPatterns.some(p => text.includes(p));
-        });
-
-        if (submitButtons.length > 0) {
-            // Prefer "Next" or "Continue" as they are common in ADP's multi-step flow
-            const btn = submitButtons.find(b => {
-                const text = (b.innerText || b.value || "").toLowerCase().trim();
-                return text.includes('next') || text.includes('continue');
-            }) || submitButtons[0];
-
-            btn.click();
-            return true;
-        }
-
-        return super.autoSubmit();
-    }
 
     findValueForInput(input, normalizedData) {
         const id = (input.id || "").toLowerCase();

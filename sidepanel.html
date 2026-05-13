@@ -76,41 +76,9 @@
       <button id="viewResumeBtn" class="secondary-btn" disabled>
         View Stored Data
       </button>
-      <button id="nextPageBtn" class="action-btn" style="background-color: #4f46e5; margin-top: 8px;" disabled>
-        Next / Continue (Auto-Detect)
-      </button>
     </div>
 
-    <!-- Auto-Apply Section -->
-    <div class="auto-apply-section"
-      style="margin-top: 16px; padding: 12px; border: 1px solid #e5e7eb; border-radius: 8px; background-color: #f9fafb;">
-      <h3 style="margin-top: 0; margin-bottom: 8px; font-size: 14px; display: flex; align-items: center; gap: 4px;">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"
-          style="color: #4f46e5;">
-          <polygon points="5 3 19 12 5 21 5 3"></polygon>
-        </svg>
-        Auto-Apply Queue
-      </h3>
-      <p style="font-size: 11px; color: #6b7280; margin-top: 0; margin-bottom: 12px;">Upload a JSON file of job URLs to
-        process sequentially.</p>
 
-      <label for="jobsInput" class="upload-btn" style="background-color: var(--secondary); margin-bottom: 8px;">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-          <polyline points="17 8 12 3 7 8"></polyline>
-          <line x1="12" y1="3" x2="12" y2="15"></line>
-        </svg>
-        <span id="jobsFileName">Upload Jobs JSON</span>
-      </label>
-      <input type="file" id="jobsInput" accept=".json" class="hidden">
-
-      <div style="display: flex; gap: 8px;">
-        <button id="startQueueBtn" class="action-btn" style="flex: 1;" disabled>Start Queue</button>
-        <button id="stopQueueBtn" class="secondary-btn" style="flex: 1;" disabled>Stop</button>
-      </div>
-      <div id="queueStatus"
-        style="font-size: 12px; margin-top: 8px; text-align: center; color: #4f46e5; font-weight: 500;"></div>
-    </div>
 
     </div><!-- End of home-tab -->
 
@@ -129,27 +97,6 @@
     <!-- Status Message -->
     <div id="status" class="hidden"></div>
 
-    <!-- Summary Panel Container -->
-    <div id="summaryPanelContainer" class="summary-container hidden">
-      <h3>Fill Summary</h3>
-      <p class="summary-desc">Review and modify the filled values below. Hit "Apply Edits" to push changes to the active
-        form.</p>
-      <div class="table-scroll">
-        <table id="summaryTable">
-          <thead>
-            <tr>
-              <th>Field</th>
-              <th>Value</th>
-              <th>Status/Conf.</th>
-            </tr>
-          </thead>
-          <tbody id="summaryTableBody">
-            <!-- Populated by JS -->
-          </tbody>
-        </table>
-      </div>
-      <button id="applyEditsBtn" class="action-btn" style="margin-top: 8px;">Apply Edits</button>
-    </div>
 
     <!-- Resume Preview -->
     <div id="resumePreview" class="hidden">
