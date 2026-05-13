@@ -22,7 +22,6 @@ document.addEventListener('input', (e) => {
 // Listen for messages from popup (Manual fallback or Edits)
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === "fill_form") {
-        injectAutoRunOverlay();
         fillForm(request.normalizedData, true, request.resumeFile);
         sendResponse({ status: "done" });
     } else if (request.action === "get_page_context") {
@@ -59,15 +58,12 @@ function attemptAutoFill(force = false) {
 
                 // Only proceed if side panel is open in this window (or it's a forced fill)
                 if (!sidePanelOpenInWindow && !force) {
-                    const existing = document.getElementById('autofill-premium-overlay');
-                    if (existing) existing.remove();
                     autoFillState.debouncing = false;
                     return;
                 }
 
                 // Show overlay and auto-fill when sidepanel is open or manually triggered
                 if ((sidePanelOpenInWindow || force) && result.normalizedData) {
-                    injectAutoRunOverlay();
                     fillForm(result.normalizedData, false, result.resumeFile);
                 }
             });
@@ -155,123 +151,10 @@ async function fillForm(data, manual = false, resume = null) {
         if (strategy) await strategy.execute(data, resume);
     } catch (err) { /* silent error for generic strategy */ }
 
-    injectAutoRunOverlay();
     const meta = extractJobMetadata();
     chrome.runtime.sendMessage({ action: 'log_fill', data: { url: window.location.href, company: meta.company, role: meta.role } });
 }
 
-function injectAutoRunOverlay() {
-    if (window.self !== window.top) return; // Only inject in top window
-    const doc = document;
-    const id = 'autofill-premium-overlay';
-    let el = doc.getElementById(id);
-    if (el) {
-        setupOverlayListeners(el);
-        return;
-    }
-
-    el = doc.createElement('div');
-    el.id = id;
-    const style = doc.createElement('style');
-    style.textContent = `
-        #${id} {
-            all: initial; position: fixed !important; bottom: 24px !important; right: 24px !important; z-index: 2147483647 !important;
-            width: 280px !important; height: auto !important; max-height: 90vh !important;
-            background: rgba(255, 255, 255, 0.65) !important; backdrop-filter: blur(12px) saturate(180%) !important;
-            -webkit-backdrop-filter: blur(12px) saturate(180%) !important; border: 1px solid rgba(255, 255, 255, 0.3) !important;
-            border-radius: 20px !important; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15) !important;
-            font-family: -apple-system, sans-serif !important; display: flex !important; flex-direction: column !important; padding: 16px !important;
-            box-sizing: border-box !important; user-select: none !important;
-        }
-        .af-h { display: flex !important; justify-content: space-between !important; margin-bottom: 12px !important; font-weight: 700 !important; color: #4f46e5 !important; font-size: 15px !important; cursor: move !important; }
-        .af-btns { display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 8px !important; }
-        .af-b { border: none !important; border-radius: 10px !important; padding: 10px !important; font-size: 12px !important; font-weight: 600 !important; cursor: pointer !important; transition: 0.2s !important; display: flex !important; align-items: center !important; justify-content: center !important; gap: 4px !important; }
-        .af-fill { background: linear-gradient(135deg, #059669, #10b981) !important; color: white !important; }
-        .af-stop { background: linear-gradient(135deg, #ef4444, #f87171) !important; color: white !important; }
-    `;
-    doc.head.appendChild(style);
-
-    // Build Header
-    const header = doc.createElement('div');
-    header.className = 'af-h';
-    const titleSpan = doc.createElement('span');
-    titleSpan.textContent = 'AutoFill';
-    header.append(titleSpan);
-
-    // Build Buttons
-    const btnContainer = doc.createElement('div');
-    btnContainer.className = 'af-btns';
-
-    const fillBtn = doc.createElement('button');
-    fillBtn.id = 'af-fill-now';
-    fillBtn.className = 'af-b af-fill';
-    fillBtn.textContent = 'Fill';
-
-    const stopBtn = doc.createElement('button');
-    stopBtn.id = 'af-stop-now';
-    stopBtn.className = 'af-b af-stop';
-    stopBtn.textContent = 'Close';
-
-    btnContainer.append(fillBtn, stopBtn);
-    el.append(header, btnContainer);
-
-    doc.body.appendChild(el);
-
-    // Load saved position
-    chrome.storage.local.get(['overlayPos'], (res) => {
-        if (res.overlayPos) {
-            el.style.setProperty('bottom', 'auto', 'important');
-            el.style.setProperty('right', 'auto', 'important');
-            el.style.setProperty('top', res.overlayPos.top + 'px', 'important');
-            el.style.setProperty('left', res.overlayPos.left + 'px', 'important');
-        }
-    });
-
-    // Make Draggable
-    let isDragging = false;
-    let offset = { x: 0, y: 0 };
-
-    header.onmousedown = (e) => {
-        isDragging = true;
-        const rect = el.getBoundingClientRect();
-        offset = {
-            x: e.clientX - rect.left,
-            y: e.clientY - rect.top
-        };
-        e.preventDefault();
-    };
-
-    doc.addEventListener('mousemove', (e) => {
-        if (!isDragging) return;
-        const x = e.clientX - offset.x;
-        const y = e.clientY - offset.y;
-        el.style.setProperty('bottom', 'auto', 'important');
-        el.style.setProperty('right', 'auto', 'important');
-        el.style.setProperty('left', x + 'px', 'important');
-        el.style.setProperty('top', y + 'px', 'important');
-    });
-
-    doc.addEventListener('mouseup', () => {
-        if (isDragging) {
-            isDragging = false;
-            const rect = el.getBoundingClientRect();
-            chrome.storage.local.set({ overlayPos: { top: rect.top, left: rect.left } });
-        }
-    });
-
-    setupOverlayListeners(el);
-}
-
-function setupOverlayListeners(el) {
-    const doc = document;
-    el.querySelector('#af-fill-now').onclick = () => {
-        doc.querySelectorAll('[data-af-user-locked]').forEach(e => delete e.dataset.afUserLocked);
-        attemptAutoFill(true);
-    };
-    el.querySelector('#af-stop-now').onclick = () => {
-        el.remove();
-    };
-}
 
 function showToast(msg, type = 'info') {
     const t = document.createElement('div');
