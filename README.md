@@ -1,4 +1,4 @@
-# 🚀 Talent Direct Auto fill Extension
+# 🚀 TalentScreen Autofill Extension
 
 A powerful, intelligent Chrome Extension designed to fully automate the tedious process of filling out job applications. By leveraging the [JSON Resume](https://jsonresume.org/) standard, it maps your professional data to complex forms across dozens of Applicant Tracking Systems (ATS) with high precision.
 

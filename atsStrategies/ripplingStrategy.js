@@ -9,7 +9,7 @@ class RipplingStrategy extends GenericStrategy {
         this._hasUploadedRipplingResume = false;
     }
 
-    async execute(normalizedData, aiEnabled, resumeFile = null) {
+    async execute(normalizedData, resumeFile = null) {
         // console.log("Executing RipplingStrategy...");
 
         // 1. Specific Handle for Location Field
@@ -35,7 +35,7 @@ class RipplingStrategy extends GenericStrategy {
         }
 
         // Run generic execution for the rest
-        await super.execute(normalizedData, aiEnabled, resumeFile);
+        await super.execute(normalizedData, resumeFile);
     }
 
     findValueForInput(input, data) {

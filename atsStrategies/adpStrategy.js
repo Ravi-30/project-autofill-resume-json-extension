@@ -8,9 +8,9 @@ class AdpStrategy extends GenericStrategy {
         this.CONFIDENCE_THRESHOLD = 70;
     }
 
-    async execute(normalizedData, aiEnabled, resumeFile = null) {
+    async execute(normalizedData, resumeFile = null) {
         // console.log("Executing AdpStrategy...");
-        await super.execute(normalizedData, aiEnabled, resumeFile);
+        await super.execute(normalizedData, resumeFile);
     }
 
     autoSubmit() {

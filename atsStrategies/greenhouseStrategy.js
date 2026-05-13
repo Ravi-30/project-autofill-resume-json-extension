@@ -5,13 +5,13 @@ class GreenhouseStrategy extends GenericStrategy {
         this.executed = false;
     }
 
-    async execute(normalizedData, aiEnabled, resumeFile = null) {
+    async execute(normalizedData, resumeFile = null) {
         if (!normalizedData) {
             console.error("No resume data provided.");
             return;
         }
 
-        this.aiEnabled = aiEnabled; // Store for inherited methods
+
 
         // Check if this is a Greenhouse form by looking for key indicators
         let hasGreenhouseForm = !!document.querySelector('[id*="application-form"], [id*="job-application"], [class*="greenhouse"], form[action*="greenhouse.io"]');
@@ -33,7 +33,7 @@ class GreenhouseStrategy extends GenericStrategy {
 
         // Logic flow:
         // 1. Run super.execute to handle "Apply" button clicking AND generic field filling
-        await super.execute(normalizedData, aiEnabled, resumeFile);
+        await super.execute(normalizedData, resumeFile);
 
         // 2. Refresh input detection after super.execute (in case "Apply" was clicked or form appeared)
         inputFields = document.querySelectorAll('input:not([type="hidden"]), textarea, select');

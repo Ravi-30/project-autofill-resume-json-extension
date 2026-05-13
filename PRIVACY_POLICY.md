@@ -1,4 +1,4 @@
-# Privacy Policy for Talent Direct Auto fill
+# Privacy Policy for TalentScreen Autofill
 
 **Last Updated: March 26, 2026**
 

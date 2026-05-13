@@ -8,8 +8,8 @@ class LeverStrategy extends GenericStrategy {
         this.CONFIDENCE_THRESHOLD = 65; // Slightly lower threshold for Lever
     }
 
-    async execute(normalizedData, aiEnabled, resumeFile = null) {
-        await super.execute(normalizedData, aiEnabled, resumeFile);
+    async execute(normalizedData, resumeFile = null) {
+        await super.execute(normalizedData, resumeFile);
     }
 
     findValueForInput(input, normalizedData) {

@@ -153,9 +153,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     */
 
-    // --- 2. AI Toggle and Config Handlers Removed ---
 
-    // --- 3. Gemini API Key Handler Removed ---
 
     function renderProfileDropdown() {
         const profileNames = Object.keys(savedProfiles);
@@ -548,7 +546,7 @@ document.addEventListener('DOMContentLoaded', () => {
         summaryPanelContainer.classList.remove('hidden');
     }
 
-    // --- 4. triggerSingleAIFill Handler Removed ---
+
 
     function showStatus(msg, type) {
         if (!statusDiv) return;

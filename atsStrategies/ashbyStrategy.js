@@ -8,9 +8,9 @@ class AshbyStrategy extends GenericStrategy {
         this.CONFIDENCE_THRESHOLD = 70;
     }
 
-    async execute(normalizedData, aiEnabled, resumeFile = null) {
+    async execute(normalizedData, resumeFile = null) {
         // console.log("Executing AshbyStrategy...");
-        await super.execute(normalizedData, aiEnabled, resumeFile);
+        await super.execute(normalizedData, resumeFile);
     }
 
     findValueForInput(input, data) {

@@ -54,13 +54,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     chrome.sidePanel.open({ tabId: tab.id });
   } else if (info.menuItemId === "forceFillData") {
     // Retrieve resume data and send to content script
-    chrome.storage.local.get(['resumeData', 'aiEnabled', 'resumeFile'], (result) => {
+    chrome.storage.local.get(['resumeData', 'resumeFile'], (result) => {
       if (result.resumeData) {
         chrome.tabs.sendMessage(tab.id, {
           action: "fill_form",
           data: result.resumeData,
           normalizedData: ResumeProcessor.normalize(result.resumeData),
-          aiEnabled: result.aiEnabled || false,
           resumeFile: result.resumeFile,
           manual: true
         });
@@ -70,13 +69,6 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 });
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  // AI Handlers Removed
-  /*
-  if (request.action === "generate_ai_answer") {
-    ...
-  }
-  */
-
   // --- Auto-Apply Queue Logic ---
   if (request.action === 'start_queue') {
     startAutoApplyQueue(request.jobs);
@@ -93,10 +85,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   } else if (request.action === 'log_submission') {
     logApplicationSubmission(request.url);
     sendResponse({ status: 'updated' });
-    // AI Cover Letter Handler Removed
-    // } else if (request.action === 'generate_cover_letter') {
-    //   ...
-    // }
   } else if (request.action === 'check_sidepanel_status') {
     const windowId = sender.tab?.windowId;
     sendResponse({ isOpen: windowId ? openSidePanelWindows.has(windowId) : false });
@@ -288,4 +276,3 @@ function broadcastQueueStatus(overrideStatus = null) {
   }
 }
 
-// --- AI Generation Functions Removed ---

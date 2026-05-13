@@ -269,7 +269,7 @@ class GenericStrategy {
         return false;
     }
 
-    async execute(normalizedData, aiEnabled, resumeFile = null) {
+    async execute(normalizedData, resumeFile = null) {
         // 
         // 
         // 
@@ -510,23 +510,8 @@ class GenericStrategy {
                     // Check if it's a required field that was missed
                     if (input.required || input.getAttribute('aria-required') === 'true') {
 
-                        if (aiEnabled) {
-
-                            // Trigger AI Fallback
-                            const aiValue = await this.triggerAIFallback(input, normalizedData);
-                            if (aiValue) {
-                                this.setInputValue(input, aiValue, 'green');
-                                status = 'filled';
-                                finalValue = aiValue;
-                                fillCount++;
-                            } else {
-                                this.highlightUnmatchedRequired(input);
-                                status = 'unmatched_required';
-                            }
-                        } else {
-                            this.highlightUnmatchedRequired(input);
-                            status = 'unmatched_required';
-                        }
+                        this.highlightUnmatchedRequired(input);
+                        status = 'unmatched_required';
                     }
                 }
 
@@ -1098,87 +1083,6 @@ class GenericStrategy {
         });
     }
 
-    /**
-     * Triggers the AI fallback for a specific input field.
-     * Collects context and sends a prompt to the Gemini API via background script.
-     */
-    async triggerAIFallback(input, normalizedData) {
-
-        const features = this.extractFeatures(input);
-        const pageContext = this.getPageContext();
-        const labelText = features.label_text || features.aria_label || features.placeholder || "this field";
-
-        // Inject AI Thinking Styles if not present
-        if (!document.getElementById('af-ai-styles')) {
-            const style = document.createElement('style');
-            style.id = 'af-ai-styles';
-            style.textContent = `
-                @keyframes af-pulse-blue {
-                    0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); border-color: #3b82f6; }
-                    70% { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); border-color: #60a5fa; }
-                    100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); border-color: #3b82f6; }
-                }
-                .af-ai-thinking {
-                    animation: af-pulse-blue 1.5s infinite !important;
-                    background-color: #eff6ff !important;
-                    transition: all 0.3s ease !important;
-                    position: relative !important;
-                    z-index: 10 !important;
-                }
-            `;
-            document.head.appendChild(style);
-        }
-
-        // Apply visual feedback
-        input.classList.add('af-ai-thinking');
-        const originalPlaceholder = input.placeholder;
-        input.placeholder = "AI is thinking...";
-
-
-
-        // Build a concise prompt with resume and job context
-        const prunedData = (typeof ResumeProcessor !== 'undefined') ? ResumeProcessor.pruneForAi(normalizedData) : normalizedData;
-        const prompt = `
-            You are an AI assistant helping a job seeker fill out an application.
-            Based on the following resume data, what is the best answer for the field labeled: "${labelText}"?
-
-            JOB CONTEXT:
-            - Company: ${pageContext.companyName}
-            - Job/Page Title: ${pageContext.headerText || pageContext.pageTitle}
-
-            FIELD CONTEXT:
-            - Label: ${features.label_text}
-            - Placeholder: ${features.placeholder}
-            - Nearby Text: ${features.nearby_text}
-            - Input Type: ${features.input_type}
-
-            RESUME DATA (JSON):
-            ${JSON.stringify(prunedData, null, 2)}
-
-            INSTRUCTIONS:
-            - PROVIDE ONLY THE RAW ANSWER TEXT. No "The answer is...", no quotes, no explanations.
-            - For standard fields (name, email, phone, etc.), match the resume EXACTLY.
-            - If it's a short answer (e.g. "Why us?"), keep it under 100 words and professional.
-            - If the resume doesn't contain the answer, return "NOT_FOUND".
-        `;
-
-        return new Promise((resolve) => {
-            chrome.runtime.sendMessage({ action: "generate_ai_answer", prompt: prompt }, (response) => {
-                // Remove visual feedback
-                input.classList.remove('af-ai-thinking');
-                input.placeholder = originalPlaceholder;
-
-                if (response && response.text && response.text.trim() !== "NOT_FOUND") {
-                    resolve(response.text.trim());
-                } else if (response && response.error) {
-                    console.error("AutoFill AI Error:", response.error);
-                    resolve(null);
-                } else {
-                    resolve(null);
-                }
-            });
-        });
-    }
 
     /**
      * Attempts to automatically submit the form by finding and clicking a Submit/Next button.
@@ -1212,25 +1116,25 @@ class GenericStrategy {
             return submitPatterns.some(p => text === p || text.startsWith(p));
         });
 
+        // Score buttons based on how specific their text is
+        const score = (text) => {
+            if (text === 'submit application') return 100;
+            if (text === 'submit') return 95;
+            if (text === 'send application') return 92;
+            if (text === 'finish') return 90;
+            if (text === 'next') return 80;
+            if (text === 'continue') return 75;
+            if (text === 'save and continue') return 72;
+            if (text === 'next step') return 70;
+            if (text.includes('apply') && text.includes('now')) return 60;
+            if (text.includes('apply') && text.includes('for')) return 55;
+            return 0;
+        };
+
         // Prioritize by pattern strength
         eligibleButtons.sort((a, b) => {
             const textA = (a.innerText || a.value || a.getAttribute('aria-label') || "").toLowerCase().trim();
             const textB = (b.innerText || b.value || b.getAttribute('aria-label') || "").toLowerCase().trim();
-
-            // Score buttons based on how specific their text is
-            const score = (text) => {
-                if (text === 'submit application') return 100;
-                if (text === 'submit') return 95;
-                if (text === 'send application') return 92;
-                if (text === 'finish') return 90;
-                if (text === 'next') return 80;
-                if (text === 'continue') return 75;
-                if (text === 'save and continue') return 72;
-                if (text === 'next step') return 70;
-                if (text.includes('apply') && text.includes('now')) return 60;
-                if (text.includes('apply') && text.includes('for')) return 55;
-                return 0;
-            };
 
             // Boost buttons with type="submit"
             let scoreA = score(textA);

@@ -89,7 +89,7 @@ function attemptAutoFill(force = false) {
             if (chrome.runtime.lastError) return;
             const sidePanelOpenInWindow = response?.isOpen || false;
 
-            chrome.storage.local.get(['normalizedData', 'aiEnabled', 'resumeFile', 'autoRunActive', 'currentJobIndex', 'totalJobs', 'savedProfiles', 'activeProfileName', 'resumeData'], (result) => {
+            chrome.storage.local.get(['normalizedData', 'resumeFile', 'autoRunActive', 'currentJobIndex', 'totalJobs', 'savedProfiles', 'activeProfileName', 'resumeData'], (result) => {
                 if (chrome.runtime.lastError) return;
 
                 // Only proceed if side panel is open in this window (or it's a forced fill)
@@ -215,7 +215,7 @@ async function fillForm(data, manual = false, resume = null, queue = false, idx 
 
     try {
         const strategy = ATSStrategyRegistry.getStrategy(window.location.href, document);
-        if (strategy) await strategy.execute(data, false, resume);
+        if (strategy) await strategy.execute(data, resume);
 
         // Apply persistent manual edits after strategy execution
         if (manualEdits && Object.keys(manualEdits).length > 0) {
@@ -401,4 +401,3 @@ function extractJobDescription() {
     return document.body.innerText.substring(0, 5000);
 }
 
-// --- AI Modal Functions Removed ---

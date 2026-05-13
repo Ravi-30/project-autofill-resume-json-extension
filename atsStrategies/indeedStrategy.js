@@ -8,11 +8,11 @@ class IndeedStrategy extends GenericStrategy {
         this.CONFIDENCE_THRESHOLD = 70; 
     }
 
-    async execute(normalizedData, aiEnabled, resumeFile = null) {
+    async execute(normalizedData, resumeFile = null) {
         // console.log("Executing IndeedStrategy...");
         
         // Basic fallback execution. Override findValueForInput if specific DOM structures are known.
-        await super.execute(normalizedData, aiEnabled, resumeFile);
+        await super.execute(normalizedData, resumeFile);
     }
 }
 

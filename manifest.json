@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "Talentdirect Autofill",
-  "version": "1.4",
+  "name": "TalentScreen Autofill",
+  "version": "1.6",
   "description": "Auto-fills job application forms using your locally stored resume data.",
   "author": "Sampath Velupula, Ravi Kumar Rayapalli, Jafar vali, Ramana gangarao, Bavish Kangari, jatin Thakur",
   "permissions": [

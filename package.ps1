@@ -23,7 +23,9 @@ $includes = @(
     "sidepanel.js",
     "styles.css",
     "atsStrategies",
-    "icons"
+    "icons",
+    "README.md",
+    "PRIVACY_POLICY.md"
 )
 
 # 4. Resolve a Python executable

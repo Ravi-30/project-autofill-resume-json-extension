@@ -8,12 +8,12 @@ class WorkdayStrategy extends GenericStrategy {
         this.CONFIDENCE_THRESHOLD = 70; // Keep standard threshold for workday
     }
 
-    async execute(normalizedData, aiEnabled, resumeFile = null) {
-        this.aiEnabled = aiEnabled; // Store for state consistency
+    async execute(normalizedData, resumeFile = null) {
+
         this.executed = true;
         this.lastExecutedUrl = window.location.href;
 
-        await super.execute(normalizedData, aiEnabled, resumeFile);
+        await super.execute(normalizedData, resumeFile);
 
         // Handle Workday-specific custom country dropdowns that GenericStrategy might miss
         this._fillWorkdayCountry(normalizedData);
