@@ -99,4 +99,28 @@ Contributions are welcome! To add support for a new job board:
 
 ---
 
+---
+
+## 🔐 Permissions Justification
+
+To provide a seamless experience across the vast landscape of Applicant Tracking Systems (ATS), this extension requires the following permissions:
+
+- **`activeTab`**: Used only to interact with the job application form you are currently viewing. We do not access your data on other tabs.
+- **`storage`**: Used to securely store your resume data locally on your device for autofilling.
+- **`host_permissions` (`*://*/*`)**: Since job applications can be hosted on any domain (including company-specific subdomains), this permission is necessary to identify and fill forms regardless of where they are hosted.
+- **`sidePanel`**: Provides a convenient interface for managing your resume data and triggering the autofill without obscuring the application form.
+
+---
+
+## 👥 Authors
+
+- Sampath Velupula - *Lead Developer*
+- Ravi Kumar Rayapalli - *ATS Strategy Specialist*
+- Jafar vali - *Developer*
+- Ramana gangarao - *Frontend Engineer*
+- Bavish Kangari - *QA & Testing*
+- jatin Thakur - *UX Designer*
+
+---
+
 *Built for job seekers who value their time.*

@@ -1,4 +1,4 @@
-// content.js
+// ... (previous code above remains the same)
 
 let autoFillState = {
     hasRun: false,
