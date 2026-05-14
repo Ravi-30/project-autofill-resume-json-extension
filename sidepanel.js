@@ -10,12 +10,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const resumeInput = document.getElementById('resumeInput');
     const fillFormBtn = document.getElementById('fillFormBtn');
     const deleteProfileBtn = document.getElementById('deleteProfileBtn');
-    const editDataBtn = document.getElementById('editDataBtn');
-    const viewDataBtn = document.getElementById('viewDataBtn');
-    const resumePreview = document.getElementById('resumePreview');
-    const resumeContent = document.getElementById('resumeContent');
-    const validateJsonBtn = document.getElementById('validateJsonBtn');
-    const validatePdfBtn = document.getElementById('validatePdfBtn');
     const uploadPdfBtn = document.getElementById('uploadPdfBtn');
     const resumeFileInput = document.getElementById('resumeFileInput');
     const pdfStatusText = document.getElementById('pdfStatusText');
@@ -29,15 +23,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const progressCount = document.getElementById('progressCount');
     const progressBar = document.getElementById('progressBar');
     
-    const editSection = document.getElementById('editSection');
     const resumeEditTextarea = document.getElementById('resumeEditTextarea');
-    const closeEditBtn = document.getElementById('closeEditBtn');
     const saveDataBtn = document.getElementById('saveDataBtn');
 
     const historyList = document.getElementById('historyList');
     const clearHistoryBtn = document.getElementById('clearHistoryBtn');
 
     let currentResumeData = null;
+    let currentResumeFile = null;
     let applicationHistory = [];
 
     // --- Tab Switching ---
@@ -49,21 +42,34 @@ document.addEventListener('DOMContentLoaded', () => {
             document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
             document.getElementById(targetTab).classList.remove('hidden');
             if (targetTab === 'history-tab') renderHistory();
+            if (targetTab === 'manage-tab') {
+                if (currentResumeData) {
+                    resumeEditTextarea.value = JSON.stringify(currentResumeData, null, 2);
+                } else {
+                    resumeEditTextarea.value = '';
+                }
+            }
         });
     });
 
     // --- UI State Management ---
     function updateUIState() {
-        if (currentResumeData) {
-            setupSuccess.classList.remove('hidden');
+        const jsonValid = validateJsonData(currentResumeData).valid;
+        const pdfValid = validatePdfFile(currentResumeFile).valid;
+
+        if (jsonValid && pdfValid) {
+            if (setupSuccess) setupSuccess.classList.remove('hidden');
             fillFormBtn.disabled = false;
             fillFormBtn.style.opacity = '1';
         } else {
-            setupSuccess.classList.add('hidden');
+            if (setupSuccess) setupSuccess.classList.add('hidden');
             fillFormBtn.disabled = true;
             fillFormBtn.style.opacity = '0.5';
-            resumePreview.classList.add('hidden');
-            viewDataBtn.textContent = 'View Stored Data';
+        }
+
+        if (currentResumeFile) {
+            pdfStatusText.textContent = `File: ${currentResumeFile.name}`;
+        } else {
             pdfStatusText.textContent = 'Upload PDF';
         }
     }
@@ -74,7 +80,8 @@ document.addEventListener('DOMContentLoaded', () => {
             currentResumeData = result.resumeData;
         }
         if (result.resumeFile) {
-            pdfStatusText.textContent = `📎 ${result.resumeFile.name}`;
+            currentResumeFile = result.resumeFile;
+            pdfStatusText.textContent = `File: ${result.resumeFile.name}`;
         } else {
             pdfStatusText.textContent = 'Upload PDF';
         }
@@ -93,9 +100,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 const rawText = e.target.result;
                 const text = rawText.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
                 const json = JSON.parse(text);
-                saveResumeData(json);
-                // Trigger auto-validation
-                setTimeout(() => validateJsonBtn.click(), 100);
+                
+                // Validate before saving
+                const validation = validateJsonData(json);
+                if (validation.valid) {
+                    saveResumeData(json);
+                    showStatus('JSON uploaded and validated!', 'success');
+                } else {
+                    showStatus(`Validation Error: ${validation.message}`, 'error');
+                }
             } catch (error) {
                 showStatus('Invalid JSON file', 'error');
             }
@@ -116,45 +129,52 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Edit Data Logic ---
-    editDataBtn.addEventListener('click', () => {
-        resumeEditTextarea.value = JSON.stringify(currentResumeData, null, 2);
-        editSection.classList.remove('hidden');
-    });
-
-    closeEditBtn.addEventListener('click', () => {
-        editSection.classList.add('hidden');
-    });
-
     saveDataBtn.addEventListener('click', () => {
         try {
-            const json = JSON.parse(resumeEditTextarea.value);
-            saveResumeData(json);
-            editSection.classList.add('hidden');
+            const rawText = resumeEditTextarea.value;
+            const text = rawText.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
+            const json = JSON.parse(text);
+            
+            const validation = validateJsonData(json);
+            if (validation.valid) {
+                resumeEditTextarea.value = JSON.stringify(json, null, 2);
+                saveResumeData(json);
+                showStatus('Changes saved and validated!', 'success');
+            } else {
+                showStatus(`Validation Error: ${validation.message}`, 'error');
+            }
         } catch (e) {
             showStatus('Invalid JSON format', 'error');
         }
     });
 
-    // --- Validation Logic ---
-    validateJsonBtn.addEventListener('click', () => {
-        if (!currentResumeData) return;
-        
+    // --- Validation Helpers ---
+    function validateJsonData(data) {
+        if (!data) return { valid: false, message: 'No data provided' };
         try {
-            const norm = ResumeProcessor.normalize(currentResumeData);
+            const norm = ResumeProcessor.normalize(data);
             const missing = [];
             if (!norm.identity?.first_name) missing.push("Name");
             if (!norm.contact?.email) missing.push("Email");
             if (!norm.employment?.history || norm.employment.history.length === 0) missing.push("Work Experience");
             
             if (missing.length > 0) {
-                showStatus(`Missing: ${missing.join(', ')}`, 'error');
-            } else {
-                showStatus('JSON is valid and complete!', 'success');
+                return { valid: false, message: `Missing: ${missing.join(', ')}` };
             }
+            return { valid: true };
         } catch (err) {
-            showStatus('Invalid JSON format', 'error');
+            return { valid: false, message: 'Invalid resume format' };
         }
-    });
+    }
+
+    function validatePdfFile(file) {
+        if (!file) return { valid: false, message: 'No file uploaded' };
+        const name = (file.name || '').toLowerCase();
+        if (name.endsWith('.pdf') || name.endsWith('.doc') || name.endsWith('.docx')) {
+            return { valid: true };
+        }
+        return { valid: false, message: 'Invalid format. Must be PDF or DOCX' };
+    }
 
     // --- PDF Management ---
     uploadPdfBtn.addEventListener('click', () => {
@@ -165,6 +185,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const file = event.target.files[0];
         if (!file) return;
 
+        // Validate PDF before saving
+        const validation = validatePdfFile(file);
+        if (!validation.valid) {
+            showStatus(validation.message, 'error');
+            return;
+        }
+
         const reader = new FileReader();
         reader.onload = (e) => {
             const resumeFileData = {
@@ -174,40 +201,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 size: file.size
             };
             chrome.storage.local.set({ resumeFile: resumeFileData }, () => {
-                pdfStatusText.textContent = `📎 ${file.name}`;
-                showStatus('Resume document saved!', 'success');
+                currentResumeFile = resumeFileData;
+                pdfStatusText.textContent = `File: ${file.name}`;
+                updateUIState();
+                showStatus('Resume document saved and validated!', 'success');
             });
         };
         reader.readAsDataURL(file);
     });
 
-    validatePdfBtn.addEventListener('click', () => {
-        chrome.storage.local.get(['resumeFile'], (result) => {
-            if (!result.resumeFile) {
-                showStatus('Please upload a PDF/DOCX first', 'error');
-                return;
-            }
-            const file = result.resumeFile;
-            const name = (file.name || '').toLowerCase();
-            if (name.endsWith('.pdf') || name.endsWith('.doc') || name.endsWith('.docx')) {
-                showStatus('Document format is valid!', 'success');
-            } else {
-                showStatus('Invalid format. Must be PDF or DOCX', 'error');
-            }
-        });
-    });
 
-    // --- View Logic ---
-    viewDataBtn.addEventListener('click', () => {
-        const isHidden = resumePreview.classList.toggle('hidden');
-        viewDataBtn.textContent = isHidden ? 'View Stored Data' : 'Hide Stored Data';
-        if (!isHidden) updatePreview();
-    });
-
-    function updatePreview() {
-        if (!currentResumeData) return;
-        resumeContent.textContent = JSON.stringify(currentResumeData, null, 2);
-    }
 
     // --- Delete Profile ---
     deleteProfileBtn.addEventListener('click', () => {
@@ -218,6 +221,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 resumeFile: null 
             }, () => {
                 currentResumeData = null;
+                currentResumeFile = null;
+                if (resumeEditTextarea) resumeEditTextarea.value = '';
                 updateUIState();
                 showStatus('All data cleared', 'success');
             });

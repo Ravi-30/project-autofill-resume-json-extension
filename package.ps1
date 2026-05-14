@@ -25,7 +25,9 @@ $includes = @(
     "atsStrategies",
     "icons",
     "README.md",
-    "PRIVACY_POLICY.md"
+    "PRIVACY_POLICY.md",
+    "sample_resume.json",
+    "sample_resume.pdf"
 )
 
 # 4. Resolve a Python executable

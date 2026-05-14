@@ -1,0 +1,139 @@
+{
+  "basics": {
+    "name": "Jane Doe",
+    "label": "Senior Software Engineer",
+    "image": "",
+    "email": "jane.doe@example.com",
+    "phone": "+1-555-0199",
+    "url": "https://janedoe.dev",
+    "summary": "Innovative Software Engineer with 8+ years of experience in full-stack development. Proven track record of building scalable web applications and leading high-performing teams.",
+    "location": {
+      "address": "123 Tech Lane",
+      "postalCode": "94043",
+      "city": "Mountain View",
+      "countryCode": "US",
+      "region": "California"
+    },
+    "profiles": [
+      {
+        "network": "LinkedIn",
+        "username": "janedoe",
+        "url": "https://www.linkedin.com/in/janedoe"
+      },
+      {
+        "network": "GitHub",
+        "username": "janedoe-dev",
+        "url": "https://github.com/janedoe-dev"
+      }
+    ],
+    "gender": "Female",
+    "pronouns": "She/Her",
+    "veteranStatus": "No",
+    "disabilityStatus": "No",
+    "ethnicity": "Asian",
+    "hispanicLatino": "No",
+    "workAuthorization": {
+      "status": "Citizen",
+      "requiresSponsorshipNowOrFuture": false
+    },
+    "availability": {
+      "soonestStartDate": "2024-06-01",
+      "noticePeriod": "2 weeks"
+    }
+  },
+  "work": [
+    {
+      "name": "Tech Corp",
+      "position": "Senior Software Engineer",
+      "url": "https://techcorp.com",
+      "startDate": "2020-01-01",
+      "endDate": "",
+      "summary": "Led the development of a microservices architecture using Node.js and AWS. Improved system performance by 40% through code optimization and better caching strategies.",
+      "highlights": [
+        "Architected scalable backend services",
+        "Mentored junior developers"
+      ]
+    },
+    {
+      "name": "StartUp Inc",
+      "position": "Software Engineer",
+      "url": "https://startupinc.io",
+      "startDate": "2016-06-01",
+      "endDate": "2019-12-31",
+      "summary": "Developed and maintained the company's core web application using React and Python/Django. Successfully migrated the platform to a modern CI/CD pipeline.",
+      "highlights": [
+        "Reduced deployment time by 50%",
+        "Implemented responsive UI designs"
+      ]
+    }
+  ],
+  "education": [
+    {
+      "institution": "University of California, Berkeley",
+      "url": "https://berkeley.edu",
+      "area": "Computer Science",
+      "studyType": "Bachelor of Science",
+      "startDate": "2012-08-01",
+      "endDate": "2016-05-31",
+      "score": "3.9",
+      "courses": [
+        "Data Structures",
+        "Algorithms",
+        "Distributed Systems"
+      ]
+    }
+  ],
+  "skills": [
+    {
+      "name": "Frontend",
+      "level": "Master",
+      "keywords": [
+        "React",
+        "TypeScript",
+        "HTML5",
+        "CSS3",
+        "Next.js"
+      ]
+    },
+    {
+      "name": "Backend",
+      "level": "Master",
+      "keywords": [
+        "Node.js",
+        "Python",
+        "Go",
+        "PostgreSQL",
+        "Redis"
+      ]
+    },
+    {
+      "name": "Cloud & Tools",
+      "level": "Advanced",
+      "keywords": [
+        "AWS",
+        "Docker",
+        "Kubernetes",
+        "Git",
+        "Jenkins"
+      ]
+    }
+  ],
+  "languages": [
+    {
+      "language": "English",
+      "fluency": "Native"
+    },
+    {
+      "language": "Spanish",
+      "fluency": "Intermediate"
+    }
+  ],
+  "interests": [
+    {
+      "name": "Open Source",
+      "keywords": [
+        "Contributing to Linux kernel"
+      ]
+    }
+  ]
+}

@@ -1,14 +1,15 @@
 /* styles.css */
 :root {
-  --primary: #6366f1;
-  --primary-hover: #4f46e5;
-  --success: #22c55e;
-  --success-bg: #dcfce7;
-  --bg: #f8fafc;
-  --surface: #ffffff;
-  --text: #0f172a;
+  --primary: #4f46e5;
+  --primary-hover: #4338ca;
+  --success: #059669;
+  --success-bg: #d1fae5;
+  --bg-gradient: linear-gradient(135deg, #e0e7ff 0%, #ede9fe 50%, #fae8ff 100%);
+  --surface: rgba(255, 255, 255, 0.75);
+  --surface-solid: #ffffff;
+  --text: #1e1b4b;
   --text-muted: #64748b;
-  --border: #e2e8f0;
+  --border: rgba(79, 70, 229, 0.2);
   --danger: #ef4444;
 }
 
@@ -16,7 +17,8 @@ body {
   margin: 0;
   padding: 16px;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  background-color: var(--bg);
+  background: var(--bg-gradient);
+  background-attachment: fixed;
   color: var(--text);
   min-width: 320px;
   line-height: 1.5;
@@ -26,6 +28,16 @@ body {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  background: var(--surface);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  padding: 20px;
+  border-radius: 24px;
+  box-shadow: 0 10px 40px rgba(79, 70, 229, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-sizing: border-box;
+  min-height: calc(100vh - 32px);
+  position: relative;
 }
 
 /* Header */
@@ -56,9 +68,10 @@ h2 {
 .tabs {
   display: flex;
   gap: 4px;
-  background-color: #f1f5f9;
+  background-color: rgba(255, 255, 255, 0.5);
   padding: 4px;
-  border-radius: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
 }
 
 .tab-btn {
@@ -66,7 +79,7 @@ h2 {
   padding: 8px;
   border: none;
   background: none;
-  border-radius: 7px;
+  border-radius: 8px;
   font-size: 0.875rem;
   font-weight: 600;
   color: var(--text-muted);
@@ -75,9 +88,9 @@ h2 {
 }
 
 .tab-btn.active {
-  background-color: var(--surface);
+  background-color: var(--surface-solid);
   color: var(--primary);
-  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
+  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.1);
 }
 
 /* Setup Message */
@@ -96,17 +109,18 @@ h2 {
 
 /* Buttons Base */
 button, .upload-btn-styled {
-  height: 42px;
+  height: 52px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
-  font-size: 0.875rem;
+  border-radius: 12px;
+  font-size: 0.95rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
   box-sizing: border-box;
   text-decoration: none;
+  width: 100%;
 }
 
 /* Main Action Button (Autofill) */
@@ -124,15 +138,15 @@ button, .upload-btn-styled {
 
 /* Upload Styled (Dashed) */
 .upload-btn-styled {
-  border: 1.5px dashed var(--border);
-  background-color: var(--surface);
-  color: var(--text-muted);
+  border: 1.5px dashed var(--primary);
+  background-color: rgba(255, 255, 255, 0.6);
+  color: var(--primary);
 }
 
 .upload-btn-styled:hover {
-  border-color: var(--primary);
-  color: var(--primary);
-  background-color: #f5f3ff;
+  border-color: var(--primary-hover);
+  color: var(--primary-hover);
+  background-color: var(--surface-solid);
 }
 
 /* Validate Green Button */
@@ -150,14 +164,14 @@ button, .upload-btn-styled {
 /* Secondary Full Width Buttons */
 .secondary-btn-full {
   width: 100%;
-  background-color: var(--surface);
+  background-color: rgba(255, 255, 255, 0.6);
   border: 1px solid var(--border);
   color: var(--text);
 }
 
 .secondary-btn-full:hover {
-  background-color: #f8fafc;
-  border-color: var(--text-muted);
+  background-color: var(--surface-solid);
+  border-color: var(--primary);
 }
 
 /* Danger Button */
@@ -174,10 +188,11 @@ button, .upload-btn-styled {
 
 /* Progress Section */
 .progress-section {
-  background-color: var(--surface);
-  border: 1px solid var(--border);
+  background-color: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.8);
   border-radius: 12px;
   padding: 14px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.02);
 }
 
 .progress-bar-container {
@@ -193,27 +208,13 @@ button, .upload-btn-styled {
   transition: width 0.5s ease-in-out;
 }
 
-/* Edit Section Overlay */
-.edit-section {
-  background-color: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 16px;
-  position: absolute;
-  top: 60px;
-  left: 16px;
-  right: 16px;
-  bottom: 16px;
-  z-index: 100;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1);
-}
+
 
 #resumeEditTextarea {
   flex-grow: 1;
   width: 100%;
   padding: 12px;
+  background-color: rgba(255, 255, 255, 0.6);
   border: 1px solid var(--border);
   border-radius: 8px;
   font-family: monospace;
@@ -249,15 +250,17 @@ button, .upload-btn-styled {
 }
 
 .history-item {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: 12px;
   padding: 12px;
-  transition: transform 0.2s;
+  transition: transform 0.2s, background-color 0.2s;
 }
 
 .history-item:hover {
   transform: translateY(-2px);
+  background: var(--surface-solid);
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.08);
 }
 
 .history-company {
@@ -302,4 +305,38 @@ button, .upload-btn-styled {
   text-decoration: none;
   font-size: 0.75rem;
   font-weight: 600;
+}
+
+/* Sample Download Button Corner */
+.sample-download-btn {
+  position: absolute;
+  bottom: 24px;
+  right: 24px;
+  width: auto;
+  height: 40px;
+  padding: 0 18px;
+  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+  color: white;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+  box-shadow: 0 4px 15px rgba(79, 70, 229, 0.4);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 50;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.sample-download-btn:hover {
+  transform: translateY(-3px) scale(1.05);
+  box-shadow: 0 8px 25px rgba(79, 70, 229, 0.5);
+  filter: brightness(1.1);
+}
+
+.sample-download-btn svg {
+  width: 16px;
+  height: 16px;
 }
