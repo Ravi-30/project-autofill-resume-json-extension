@@ -1,5 +1,5 @@
 // Background service worker
-importScripts('resumeProcessor.js');
+importScripts('/src/background/resumeProcessor.js');
 
 try {
   if (chrome.sidePanel && chrome.sidePanel.setPanelBehavior) {
