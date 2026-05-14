@@ -9,14 +9,9 @@ def create_zip(source_dir, output_path):
     # Files and folders to include
     includes = [
         "manifest.json",
-        "background.js",
-        "content.js",
-        "resumeProcessor.js",
-        "sidepanel.html",
-        "sidepanel.js",
-        "styles.css",
-        "atsStrategies",
-        "icons",
+        "src",
+        "assets",
+        "shared",
         "README.md",
         "PRIVACY_POLICY.md",
         "sample_resume.json",

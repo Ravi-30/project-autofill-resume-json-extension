@@ -16,14 +16,9 @@ New-Item -ItemType Directory -Path $tempDir | Out-Null
 # 3. List of files/folders to include
 $includes = @(
     "manifest.json",
-    "background.js",
-    "content.js",
-    "resumeProcessor.js",
-    "sidepanel.html",
-    "sidepanel.js",
-    "styles.css",
-    "atsStrategies",
-    "icons",
+    "src",
+    "assets",
+    "shared",
     "README.md",
     "PRIVACY_POLICY.md",
     "sample_resume.json",
