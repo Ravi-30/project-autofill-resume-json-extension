@@ -67,7 +67,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const jsonValid = validateJsonData(currentResumeData).valid;
         const pdfValid = validatePdfFile(currentResumeFile).valid;
 
-        if (jsonValid && pdfValid) {
+        if (jsonValid) {
             if (setupSuccess) setupSuccess.classList.remove('hidden');
             fillFormBtn.disabled = false;
             fillFormBtn.style.opacity = '1';
