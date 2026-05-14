@@ -87,7 +87,7 @@
         "*://*.rippling-ats.com/*"
       ],
       "js": [
-        "shared/resumeProcessor.js",
+        "src/content/resumeProcessor.js",
         "src/content/atsStrategies/genericStrategy.js",
         "src/content/atsStrategies/strategyRegistry.js",
         "src/content/atsStrategies/adpStrategy.js",
