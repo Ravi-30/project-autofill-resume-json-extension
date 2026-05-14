@@ -191,7 +191,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return { valid: false, message: 'Invalid resume format' };
         }
     }
-    */
+
 
     function validatePdfFile(file) {
         if (!file) return { valid: false, message: 'No file uploaded' };
