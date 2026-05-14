@@ -33,6 +33,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentResumeFile = null;
     let applicationHistory = [];
 
+    const sampleDownloadBtn = document.getElementById('sampleDownloadBtn');
+
     // --- Tab Switching ---
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -41,6 +43,14 @@ document.addEventListener('DOMContentLoaded', () => {
             btn.classList.add('active');
             document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
             document.getElementById(targetTab).classList.remove('hidden');
+
+            // Show/Hide Sample PDF button based on tab
+            if (targetTab === 'home-tab') {
+                sampleDownloadBtn.classList.remove('hidden');
+            } else {
+                sampleDownloadBtn.classList.add('hidden');
+            }
+
             if (targetTab === 'history-tab') renderHistory();
             if (targetTab === 'manage-tab') {
                 if (currentResumeData) {
@@ -116,35 +126,50 @@ document.addEventListener('DOMContentLoaded', () => {
         reader.readAsText(file);
     });
 
-    function saveResumeData(json) {
-        currentResumeData = json;
-        const normalized = ResumeProcessor.normalize(json);
-        chrome.storage.local.set({ 
-            resumeData: json, 
-            normalizedData: normalized 
-        }, () => {
-            updateUIState();
-            showStatus('Resume profile saved!', 'success');
-        });
+    function saveResumeData(json, successMessage = 'Resume profile saved!') {
+        try {
+            currentResumeData = json;
+            const normalized = ResumeProcessor.normalize(json);
+            chrome.storage.local.set({ 
+                resumeData: json, 
+                normalizedData: normalized 
+            }, () => {
+                if (chrome.runtime.lastError) {
+                    console.error('Storage error:', chrome.runtime.lastError);
+                    showStatus('Error saving to storage: ' + chrome.runtime.lastError.message, 'error');
+                } else {
+                    updateUIState();
+                    showStatus(successMessage, 'success');
+                }
+            });
+        } catch (err) {
+            console.error('Normalization error:', err);
+            showStatus('Error processing resume data', 'error');
+        }
     }
 
     // --- Edit Data Logic ---
     saveDataBtn.addEventListener('click', () => {
         try {
-            const rawText = resumeEditTextarea.value;
+            const rawText = resumeEditTextarea.value.trim();
+            if (!rawText) {
+                showStatus('Please enter resume JSON', 'error');
+                return;
+            }
+
             const text = rawText.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
             const json = JSON.parse(text);
             
             const validation = validateJsonData(json);
             if (validation.valid) {
+                // Re-format JSON for the user
                 resumeEditTextarea.value = JSON.stringify(json, null, 2);
-                saveResumeData(json);
-                showStatus('Changes saved and validated!', 'success');
+                saveResumeData(json, 'Changes saved successfully!');
             } else {
                 showStatus(`Validation Error: ${validation.message}`, 'error');
             }
         } catch (e) {
-            showStatus('Invalid JSON format', 'error');
+            showStatus('Invalid JSON format: ' + e.message, 'error');
         }
     });
 
@@ -265,11 +290,18 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // --- Status Messages ---
+    let statusTimeout = null;
     function showStatus(msg, type) {
+        if (statusTimeout) clearTimeout(statusTimeout);
+        
         statusDiv.textContent = msg;
         statusDiv.className = `status-message status-${type}`;
         statusDiv.classList.remove('hidden');
-        setTimeout(() => { statusDiv.classList.add('hidden'); }, 3000);
+        
+        statusTimeout = setTimeout(() => {
+            statusDiv.classList.add('hidden');
+            statusTimeout = null;
+        }, 3000);
     }
 
     // --- History ---
