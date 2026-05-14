@@ -14,8 +14,7 @@ def create_zip(source_dir, output_path):
         "shared",
         "README.md",
         "PRIVACY_POLICY.md",
-        "sample_resume.json",
-        "sample_resume.pdf"
+        "sample_resume.json"
     ]
     
     print(f"Creating {zip_path} from {project_root}...")

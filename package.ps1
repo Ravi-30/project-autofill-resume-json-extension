@@ -21,8 +21,7 @@ $includes = @(
     "shared",
     "README.md",
     "PRIVACY_POLICY.md",
-    "sample_resume.json",
-    "sample_resume.pdf"
+    "sample_resume.json"
 )
 
 # 4. Resolve a Python executable
